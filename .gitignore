@@ -31,6 +31,11 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
 
 # typescript
 *.tsbuildinfo
+
+# react native
+.expo/
+hooks/.useWarmUpBrowser.ts.*
