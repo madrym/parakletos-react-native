@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RichText, Toolbar, useEditorBridge } from '@10play/tentap-editor';
+import { DEFAULT_TOOLBAR_ITEMS, RichText, Toolbar, useEditorBridge } from '@10play/tentap-editor';
 import { View, TextInput, StyleSheet, Modal, TouchableOpacity, Text, ScrollView, SafeAreaView } from 'react-native';
 
 interface Tag {
@@ -66,7 +66,19 @@ export default function NotePage() {
             {/* Content Editor */}
             <SafeAreaView style={styles.fullScreen}>
                 <RichText editor={editor} />
-                <Toolbar editor={editor} />
+                <Toolbar editor={editor}
+                    items={[
+                        {
+                            onPress:({editor}) => () => {
+                                return setIsTagModalVisible(true);
+                            },
+                            active:() => false,
+                            disabled:() => false,
+                            image:() => require('../../assets/images/bible.png'),
+                        },
+                        ...DEFAULT_TOOLBAR_ITEMS,
+                    ]}
+                 />
             </SafeAreaView>
 
             {/* Tag Modal */}
