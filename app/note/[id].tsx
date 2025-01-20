@@ -12,11 +12,40 @@ export default function NotePage() {
     const [tags, setTags] = useState<Tag[]>([]);
     const [isTagModalVisible, setIsTagModalVisible] = useState(false);
     const [newTag, setNewTag] = useState('');
+    const [folder, setFolder] = useState('Folder');
     
     const editor = useEditorBridge({
         autofocus: true,
         avoidIosKeyboard: true,
-        initialContent: 'Start editing!',
+        initialContent: '',
+        theme: {
+            toolbar: {
+                toolbarBody: {
+                    backgroundColor: '#F5F5DC',
+                },
+                toolbarButton: {
+                    backgroundColor: 'transparent',
+                },
+                icon: {
+                    tintColor: '#0B4619',
+                },
+                iconActive: {
+                    tintColor: '#0B4619',
+                    borderColor: '#0B4619',
+                },
+                iconWrapper: {
+                    backgroundColor: 'transparent',
+                },
+                iconWrapperActive: {
+                    backgroundColor: '#FFFFFF',
+                    borderColor: '#0B4619',
+                    borderWidth: 1,
+                },
+            },
+            colorKeyboard: {},
+            webview: {},
+            webviewContainer: {}
+        }
     });
 
     const handleAddTag = () => {
@@ -33,52 +62,71 @@ export default function NotePage() {
 
     return (
         <View style={styles.container}>
-            {/* Title Input */}
-            <TextInput
-                style={styles.titleInput}
-                value={title}
-                onChangeText={setTitle}
-                placeholder="Note Title"
-                placeholderTextColor="#666"
-            />
+            {/* Header Section */}
+            <View style={styles.header}> 
+                <TextInput
+                    style={styles.titleInput}
+                    value={title}
+                    onChangeText={setTitle}
+                    placeholder="Untitled"
+                    placeholderTextColor="#0B4619"
+                />
 
-            {/* Tags Section */}
-            <View style={styles.tagsContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {tags.map(tag => (
+                <View style={styles.tagsSection}>
+                    <Text style={styles.tagsLabel}>Tags:</Text>
+                    <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.tagsScrollView}
+                    >
+                        {tags.map(tag => (
+                            <TouchableOpacity
+                                key={tag.id}
+                                style={styles.tag}
+                                onPress={() => handleRemoveTag(tag.id)}
+                            >
+                                <Text style={styles.tagText}>{tag.name}</Text>
+                            </TouchableOpacity>
+                        ))}
                         <TouchableOpacity
-                            key={tag.id}
-                            style={styles.tag}
-                            onPress={() => handleRemoveTag(tag.id)}
+                            style={styles.addTagSmall}
+                            onPress={() => setIsTagModalVisible(true)}
                         >
-                            <Text style={styles.tagText}>{tag.name} ×</Text>
+                            <Text style={styles.addTagSmallText}>+</Text>
                         </TouchableOpacity>
-                    ))}
-                </ScrollView>
-                <TouchableOpacity
-                    style={styles.addTagButton}
-                    onPress={() => setIsTagModalVisible(true)}
-                >
-                    <Text style={styles.addTagButtonText}>+ Add Tag</Text>
-                </TouchableOpacity>
+                    </ScrollView>
+                </View>
+
+                <View style={styles.folderRow}>
+                    <TouchableOpacity style={styles.folderSelector}>
+                        <Text style={styles.folderText}>{folder}</Text>
+                        <Text style={styles.dropdownIcon}>▼</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateText}>{new Date().toLocaleDateString()}</Text>
+                </View>
             </View>
 
             {/* Content Editor */}
-            <SafeAreaView style={styles.fullScreen}>
-                <RichText editor={editor} />
-                <Toolbar editor={editor}
-                    items={[
-                        {
-                            onPress:({editor}) => () => {
-                                return setIsTagModalVisible(true);
+            <SafeAreaView style={[styles.fullScreen]}>
+                <RichText 
+                    editor={editor} 
+                    style={styles.richText}
+                />
+                <SafeAreaView style={[styles.toolbar]}>
+                    <Toolbar editor={editor}
+                        items={[
+                            {
+                                onPress:({editor}) => () => {
+                                    return setIsTagModalVisible(true);
+                                },
+                                active:() => false,
+                                disabled:() => false,
+                                image:() => require('../../assets/images/bible.png'),
                             },
-                            active:() => false,
-                            disabled:() => false,
-                            image:() => require('../../assets/images/bible.png'),
-                        },
-                        ...DEFAULT_TOOLBAR_ITEMS,
-                    ]}
-                 />
+                            ...DEFAULT_TOOLBAR_ITEMS,
+                        ]}
+                    />
+                </SafeAreaView>
             </SafeAreaView>
 
             {/* Tag Modal */}
@@ -95,7 +143,7 @@ export default function NotePage() {
                             value={newTag}
                             onChangeText={setNewTag}
                             placeholder="Enter tag name"
-                            placeholderTextColor="#666"
+                            placeholderTextColor="#0B4619"
                             autoFocus
                         />
                         <View style={styles.modalButtons}>
@@ -103,7 +151,7 @@ export default function NotePage() {
                                 style={styles.modalButton}
                                 onPress={() => setIsTagModalVisible(false)}
                             >
-                                <Text style={styles.modalButtonText}>Cancel</Text>
+                                <Text style={[styles.modalButtonText, { color: '#0B4619' }]}>Cancel</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.modalButton, styles.addButton]}
@@ -122,24 +170,90 @@ export default function NotePage() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        padding: 16,
-        backgroundColor: '#fff',
+        backgroundColor: '#F5F5DC',
+    },
+    header: {
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        backgroundColor: '#F5F5DC',
+    },
+    headerTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
+    backButton: {
+        fontSize: 24,
+        color: '#333',
+    },
+    shareButton: {
+        fontSize: 24,
+        color: '#333',
     },
     titleInput: {
-        fontSize: 24,
+        fontSize: 32,
         fontWeight: 'bold',
+        color: '#0B4619',
         marginBottom: 16,
-        padding: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: '#ddd',
+        padding: 0,
     },
-    tagsContainer: {
+    metadataRow: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 16,
     },
+    tagsSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    tagsLabel: {
+        fontSize: 16,
+        color: '#666',
+        marginRight: 8,
+    },
+    addTagSmall: {
+        width: 24,
+        height: 24,
+        borderWidth: 1,
+        borderColor: '#666',
+        borderRadius: 4,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    addTagSmallText: {
+        fontSize: 16,
+        color: '#666',
+    },
+    folderDateSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    folderSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginRight: 16,
+    },
+    folderText: {
+        fontSize: 16,
+        color: '#0B4619',
+        marginRight: 4,
+    },
+    dropdownIcon: {
+        fontSize: 12,
+        color: '#0B4619',
+    },
+    dateText: {
+        fontSize: 16,
+        color: '#0B4619',
+    },
+    tagsScrollView: {
+        flexGrow: 0,
+        flexShrink: 1,
+    },
     tag: {
-        backgroundColor: '#e0e0e0',
+        backgroundColor: '#0B4619',
         borderRadius: 16,
         paddingHorizontal: 12,
         paddingVertical: 6,
@@ -147,14 +261,7 @@ const styles = StyleSheet.create({
     },
     tagText: {
         fontSize: 14,
-        color: '#333',
-    },
-    addTagButton: {
-        padding: 8,
-    },
-    addTagButtonText: {
-        color: '#007AFF',
-        fontSize: 14,
+        color: '#F5F5DC',
     },
     contentInput: {
         flex: 1,
@@ -171,19 +278,23 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     modalContent: {
-        backgroundColor: '#fff',
+        backgroundColor: '#F5F5DC',
         borderRadius: 12,
         padding: 20,
         width: '80%',
         maxWidth: 400,
+        borderWidth: 1,
+        borderColor: '#0B4619',
     },
     tagInput: {
         borderWidth: 1,
-        borderColor: '#ddd',
+        borderColor: '#0B4619',
         borderRadius: 8,
         padding: 12,
         marginBottom: 16,
         fontSize: 16,
+        backgroundColor: '#F5F5DC',
+        color: '#0B4619',
     },
     modalButtons: {
         flexDirection: 'row',
@@ -195,19 +306,46 @@ const styles = StyleSheet.create({
         marginLeft: 8,
     },
     addButton: {
-        backgroundColor: '#007AFF',
+        backgroundColor: '#0B4619',
         borderRadius: 8,
     },
     modalButtonText: {
         fontSize: 16,
-        color: '#007AFF',
+        color: '#F5F5DC',
     },
     fullScreen: {
         flex: 1,
+        borderTopWidth: 1,
+        borderColor: '#0B4619',
+        backgroundColor: '#F5F5DC',
+        marginTop: 8,
+        paddingLeft: 16,
+        paddingRight: 16,
     },
     keyboardAvoidingView: {
         position: 'absolute',
         width: '100%',
         bottom: 0,
+    },
+    toolbar: {
+        minHeight: 50,
+        maxHeight: 100,
+        backgroundColor: '#F5F5DC',
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#0B4619',
+    },
+    folderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    richText: {
+        flex: 1,
+        padding: 20,
+        fontSize: 16,
+        color: '#0B4619',
+        backgroundColor: '#F5F5DC',
     },
 });
