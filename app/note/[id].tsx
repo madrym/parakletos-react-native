@@ -1,13 +1,64 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DEFAULT_TOOLBAR_ITEMS, RichText, Toolbar, useEditorBridge } from '@10play/tentap-editor';
 import { View, TextInput, StyleSheet, Modal, TouchableOpacity, Text, ScrollView, SafeAreaView } from 'react-native';
-
+import { initialiseDB, getVersesFromDB } from '@/utils/initDB';
+import nivData from '@/data/NIV.json';
+import { NIVData } from '@/data/types';
 interface Tag {
     id: string;
     name: string;
 }
 
 export default function NotePage() {
+    const [isDBInitialized, setIsDBInitialized] = useState(false);
+    const [bibleVerses, setBibleVerses] = useState<{ reference: string; text: string }[]>([]);
+    
+    useEffect(() => {
+        async function initDB() {
+            try {
+                if (!nivData || !Array.isArray(nivData)) {
+                    console.error('Invalid NIV data format:', nivData);
+                    return;
+                }
+                console.log('Starting DB initialization with NIV data...'); // Debug log
+                await initialiseDB(nivData as NIVData[]);
+                setIsDBInitialized(true);
+                console.log('Database initialized successfully');
+                
+                // Verify initialization worked
+                const testVerse = await getVersesFromDB("John 3:16");
+                console.log('Test verse after initialization:', testVerse);
+            } catch (error) {
+                console.error('Error initializing database:', error);
+            }
+        }
+        initDB();
+    }, []);
+
+    // Wait for DB initialization before allowing verse fetching
+    const fetchBibleVerse = async (reference: string) => {
+        if (!isDBInitialized) {
+            console.log('Database not yet initialized');
+            return;
+        }
+        try {
+            console.log('Fetching verse:', reference); // Debug log
+            const result = await getVersesFromDB(reference);
+            console.log('Fetch result:', result); // Debug log
+            
+            if (result.verses.length > 0) {
+                setBibleVerses(prev => [...prev, {
+                    reference: result.formattedReference,
+                    text: result.verses.map(v => v.text).join(' ')
+                }]);
+            } else {
+                console.log('No verses found for reference:', reference);
+            }
+        } catch (error) {
+            console.error('Error fetching verse:', error);
+        }
+    };
+
     const [title, setTitle] = useState('');
     const [tags, setTags] = useState<Tag[]>([]);
     const [isTagModalVisible, setIsTagModalVisible] = useState(false);
@@ -62,6 +113,27 @@ export default function NotePage() {
 
     return (
         <View style={styles.container}>
+            {/* Add this somewhere in your UI */}
+            <TouchableOpacity 
+                style={styles.verseButton}
+                onPress={() => {
+                    console.log('Button pressed'); // Debug log
+                    fetchBibleVerse("John 3:16");
+                }}
+            >
+                <Text style={styles.verseButtonText}>Insert John 3:16</Text>
+            </TouchableOpacity>
+
+            {/* Display fetched verses */}
+            <ScrollView style={styles.versesContainer}>
+                {bibleVerses.map((verse, index) => (
+                    <View key={index} style={styles.verseItem}>
+                        <Text style={styles.verseReference}>{verse.reference}</Text>
+                        <Text style={styles.verseText}>{verse.text}</Text>
+                    </View>
+                ))}
+            </ScrollView>
+
             {/* Header Section */}
             <View style={styles.header}> 
                 <TextInput
@@ -311,5 +383,35 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#0B4619',
         backgroundColor: '#F5F5DC',
+    },
+    verseButton: {
+        backgroundColor: '#0B4619',
+        padding: 10,
+        borderRadius: 5,
+        margin: 10,
+    },
+    verseButtonText: {
+        color: '#F5F5DC',
+        textAlign: 'center',
+    },
+    versesContainer: {
+        maxHeight: 200,
+        margin: 10,
+    },
+    verseItem: {
+        marginBottom: 10,
+        padding: 10,
+        backgroundColor: '#F5F5DC',
+        borderRadius: 5,
+        borderColor: '#0B4619',
+        borderWidth: 1,
+    },
+    verseReference: {
+        fontWeight: 'bold',
+        color: '#0B4619',
+        marginBottom: 5,
+    },
+    verseText: {
+        color: '#0B4619',
     },
 });
