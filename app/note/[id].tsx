@@ -177,31 +177,12 @@ const styles = StyleSheet.create({
         paddingTop: 8,
         backgroundColor: '#F5F5DC',
     },
-    headerTop: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 16,
-    },
-    backButton: {
-        fontSize: 24,
-        color: '#333',
-    },
-    shareButton: {
-        fontSize: 24,
-        color: '#333',
-    },
     titleInput: {
         fontSize: 32,
         fontWeight: 'bold',
         color: '#0B4619',
         marginBottom: 16,
         padding: 0,
-    },
-    metadataRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
     },
     tagsSection: {
         flexDirection: 'row',
@@ -225,10 +206,6 @@ const styles = StyleSheet.create({
     addTagSmallText: {
         fontSize: 16,
         color: '#666',
-    },
-    folderDateSection: {
-        flexDirection: 'row',
-        alignItems: 'center',
     },
     folderSelector: {
         flexDirection: 'row',
@@ -262,14 +239,6 @@ const styles = StyleSheet.create({
     tagText: {
         fontSize: 14,
         color: '#F5F5DC',
-    },
-    contentInput: {
-        flex: 1,
-        fontSize: 16,
-        textAlignVertical: 'top',
-        padding: 8,
-        backgroundColor: '#f9f9f9',
-        borderRadius: 8,
     },
     modalOverlay: {
         flex: 1,
@@ -321,11 +290,6 @@ const styles = StyleSheet.create({
         marginTop: 8,
         paddingLeft: 16,
         paddingRight: 16,
-    },
-    keyboardAvoidingView: {
-        position: 'absolute',
-        width: '100%',
-        bottom: 0,
     },
     toolbar: {
         minHeight: 50,
