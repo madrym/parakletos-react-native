@@ -11,7 +11,7 @@ interface Tag {
 
 export default function NotePage() {
     const [isDBInitialized, setIsDBInitialized] = useState(false);
-    const [bibleVerses, setBibleVerses] = useState<{ reference: string; text: string }[]>([]);
+    const [bibleVerses, setBibleVerses] = useState<{ reference: string; text: string; verses: any[] }[]>([]);
     
     useEffect(() => {
         async function initDB() {
@@ -42,14 +42,15 @@ export default function NotePage() {
             return;
         }
         try {
-            console.log('Fetching verse:', reference); // Debug log
+            console.log('Fetching verse:', reference);
             const result = await getVersesFromDB(reference);
-            console.log('Fetch result:', result); // Debug log
+            console.log('Fetch result:', result);
             
             if (result.verses.length > 0) {
                 setBibleVerses(prev => [...prev, {
                     reference: result.formattedReference,
-                    text: result.verses.map(v => v.text).join(' ')
+                    text: result.verses.map(v => `${v.text} `).join(''),
+                    verses: result.verses // Store the complete verses array
                 }]);
             } else {
                 console.log('No verses found for reference:', reference);
@@ -111,30 +112,44 @@ export default function NotePage() {
         setTags(tags.filter(tag => tag.id !== tagId));
     };
 
+    const [isBibleModalVisible, setIsBibleModalVisible] = useState(false);
+    const [bibleReference, setBibleReference] = useState('');
+
+    const handleInsertVerse = async () => {
+        if (!bibleReference.trim()) return;
+        
+        try {
+            const result = await getVersesFromDB(bibleReference);
+            if (result.verses.length > 0) {
+                const verseText = result.verses.map(v => 
+                    `<span style="font-size: 8px; vertical-align: super; margin-right: 4px;">${v.verse}</span> ${v.text}`
+                ).join(' ');
+                
+                const verseBlock = `<blockquote style="margin: 10px 0; padding: 10px; background-color: #F5F5DC; border: 1px solid #0B4619; border-radius: 5px; border-left: 4px solid #0B4619;">
+                    <div style="font-weight: bold; margin-bottom: 5px; color: #0B4619;">
+                        ${result.formattedReference.trim()}
+                    </div>
+                    <div style="color: #0B4619; line-height: 1.5;">
+                        ${verseText}
+                    </div>
+                </blockquote><p></p>`.trim();
+
+                const currentContent = await editor.getHTML();
+                editor.setContent(`${currentContent.trim()}${verseBlock.trim()}`);
+                
+                setBibleReference('');
+                setIsBibleModalVisible(false);
+            } else {
+                console.log('No verses found for reference:', bibleReference);
+            }
+        } catch (error) {
+            console.error('Error inserting verse:', error);
+        }
+    };
+
     return (
         <View style={styles.container}>
-            {/* Add this somewhere in your UI */}
-            <TouchableOpacity 
-                style={styles.verseButton}
-                onPress={() => {
-                    console.log('Button pressed'); // Debug log
-                    fetchBibleVerse("John 3:16");
-                }}
-            >
-                <Text style={styles.verseButtonText}>Insert John 3:16</Text>
-            </TouchableOpacity>
-
-            {/* Display fetched verses */}
-            <ScrollView style={styles.versesContainer}>
-                {bibleVerses.map((verse, index) => (
-                    <View key={index} style={styles.verseItem}>
-                        <Text style={styles.verseReference}>{verse.reference}</Text>
-                        <Text style={styles.verseText}>{verse.text}</Text>
-                    </View>
-                ))}
-            </ScrollView>
-
-            {/* Header Section */}
+            {/* Header */}
             <View style={styles.header}> 
                 <TextInput
                     style={styles.titleInput}
@@ -188,12 +203,12 @@ export default function NotePage() {
                     <Toolbar editor={editor}
                         items={[
                             {
-                                onPress:({editor}) => () => {
-                                    return setIsTagModalVisible(true);
+                                onPress: ({editor}) => () => {
+                                    setIsBibleModalVisible(true);
                                 },
-                                active:() => false,
-                                disabled:() => false,
-                                image:() => require('../../assets/images/bible.png'),
+                                active: () => false,
+                                disabled: () => false,
+                                image: () => require('../../assets/images/bible.png'),
                             },
                             ...DEFAULT_TOOLBAR_ITEMS,
                         ]}
@@ -230,6 +245,41 @@ export default function NotePage() {
                                 onPress={handleAddTag}
                             >
                                 <Text style={styles.modalButtonText}>Add</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={isBibleModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsBibleModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Insert Bible Verse</Text>
+                        <TextInput
+                            style={styles.tagInput}
+                            value={bibleReference}
+                            onChangeText={setBibleReference}
+                            placeholder="Enter reference (e.g., John 3:16)"
+                            placeholderTextColor="#0B4619"
+                            autoFocus
+                        />
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={styles.modalButton}
+                                onPress={() => setIsBibleModalVisible(false)}
+                            >
+                                <Text style={[styles.modalButtonText, { color: '#0B4619' }]}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.addButton]}
+                                onPress={handleInsertVerse}
+                            >
+                                <Text style={styles.modalButtonText}>Insert</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -411,7 +461,26 @@ const styles = StyleSheet.create({
         color: '#0B4619',
         marginBottom: 5,
     },
+    verseTextContainer: {
+        color: '#0B4619',
+        lineHeight: 24,
+        fontSize: 16,
+    },
+    verseNumber: {
+        fontSize: 10,
+        color: '#0B4619',
+        lineHeight: 10,
+        top: -5,
+        marginRight: 1,
+    },
     verseText: {
         color: '#0B4619',
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#0B4619',
+        marginBottom: 16,
+        textAlign: 'center',
     },
 });
