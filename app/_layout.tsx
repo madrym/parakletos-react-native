@@ -1,11 +1,12 @@
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
-import { router, Stack, useRouter } from 'expo-router';
+import { router, Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { TouchableOpacity } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import TopBanner from '../components/TopBanner';
 
 const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 // Cache the Clerk JWT
@@ -59,32 +60,53 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const { isLoaded, isSignedIn } = useAuth();
+  const segments = useSegments();
   const router = useRouter();
 
-  // Automatically open login if user is not authenticated
   useEffect(() => {
-    if (isLoaded && !isSignedIn) {
-      router.push('/(modals)/login');
+    if (!isLoaded) return;
+    
+    const inAuthGroup = segments[0] === '(modals)';
+    const isRootRoute = segments[0] === undefined;
+    
+    // Check if the current path is valid
+    const isKnownPath = ['(tabs)', '(modals)', undefined].includes(segments[0]);
+
+    // Handle navigation based on auth state and path
+    if (!isSignedIn) {
+      // If not signed in, redirect to login
+      if (!inAuthGroup) {
+        router.replace('/(modals)/login');
+      }
+    } else {
+      // If signed in...
+      if (isRootRoute || !isKnownPath) {
+        // Redirect to home if:
+        // 1. At root path (localhost:8081)
+        // 2. At unknown path
+        router.replace('/(tabs)/home');
+      }
     }
-  }, [isLoaded]);
+  }, [isLoaded, isSignedIn, segments]);
+
+  if (!isLoaded) return null;
+
   return (
     <Stack>
       <Stack.Screen
         name="(modals)/login"
         options={{
           presentation: 'modal',
-          title: 'Log in or sign up',
-          headerTitleStyle: {
-            fontFamily: 'mon-sb',
-          },
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()}>
-              <Ionicons name="close-outline" size={28} />
-            </TouchableOpacity>
-          ),
+          headerShown: false,
         }}
       />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen 
+        name="(tabs)" 
+        options={{ 
+          headerShown: true,
+          header: () => <TopBanner />,
+        }} 
+      />
     </Stack>
   );
 }

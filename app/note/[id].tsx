@@ -4,6 +4,9 @@ import { View, TextInput, StyleSheet, Modal, TouchableOpacity, Text, ScrollView,
 import { initialiseDB, getVersesFromDB } from '@/utils/initDB';
 import nivData from '@/data/NIV.json';
 import { NIVData } from '@/data/types';
+import { router, Stack } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+
 interface Tag {
     id: string;
     name: string;
@@ -12,7 +15,7 @@ interface Tag {
 export default function NotePage() {
     const [isDBInitialized, setIsDBInitialized] = useState(false);
     const [bibleVerses, setBibleVerses] = useState<{ reference: string; text: string; verses: any[] }[]>([]);
-    
+
     useEffect(() => {
         async function initDB() {
             try {
@@ -66,6 +69,13 @@ export default function NotePage() {
     const [newTag, setNewTag] = useState('');
     const [folder, setFolder] = useState('Folder');
     
+    const [suggestionBox, setSuggestionBox] = useState({
+        visible: false,
+        reference: '',
+        position: { x: 0, y: 0 },
+        verses: [] as any[]
+    });
+
     const editor = useEditorBridge({
         autofocus: true,
         avoidIosKeyboard: true,
@@ -97,8 +107,45 @@ export default function NotePage() {
             colorKeyboard: {},
             webview: {},
             webviewContainer: {}
-        }
+        },
     });
+
+    // Inject custom CSS for verse numbers
+    useEffect(() => {
+        if (editor) {
+            const verseNumberCSS = `
+                sup.verse-number {
+                    color: rgb(0, 0, 0) !important;
+                    font-size: 0.8em !important;
+                    padding-right: 3px !important;
+                }
+                /* If using span instead of sup */
+                span.verse-number {
+                    color: rgb(0, 0, 0) !important;
+                    font-size: 0.8em !important;
+                    vertical-align: super !important;
+                    padding-right: 3px !important;
+                }
+            `;
+            editor.injectCSS(verseNumberCSS, 'verse-number-styles');
+        }
+    }, [editor]);
+
+    const [editorContent, setEditorContent] = useState('');
+    useEffect(() => {
+        const checkContent = async () => {
+            if (editor) {
+                const content = await editor.getHTML();
+                setEditorContent(content);
+                checkForBibleReference(content);
+            }
+        };
+
+        // Set up an interval to check content
+        const interval = setInterval(checkContent, 1000);
+
+        return () => clearInterval(interval);
+    }, [editor]);
 
     const handleAddTag = () => {
         if (newTag.trim()) {
@@ -115,41 +162,179 @@ export default function NotePage() {
     const [isBibleModalVisible, setIsBibleModalVisible] = useState(false);
     const [bibleReference, setBibleReference] = useState('');
 
-    const handleInsertVerse = async () => {
-        if (!bibleReference.trim()) return;
+    const handleInsertVerse = async (reference?: string) => {
+        const verseToFetch = reference || bibleReference;
+        if (!verseToFetch.trim()) return;
         
         try {
-            const result = await getVersesFromDB(bibleReference);
+            const result = await getVersesFromDB(verseToFetch);
             if (result.verses.length > 0) {
+                // Map regular numbers to Unicode superscripts
+                const supMap: { [key: string]: string } = {
+                    '0': '⁰',
+                    '1': '¹',
+                    '2': '²',
+                    '3': '³',
+                    '4': '⁴',
+                    '5': '⁵',
+                    '6': '⁶',
+                    '7': '⁷',
+                    '8': '⁸',
+                    '9': '⁹',
+                };
+                
+                const toSuperscript = (num: string) => {
+                    return num.split('').map(digit => supMap[digit] || digit).join('');
+                };
+                
                 const verseText = result.verses.map(v => 
-                    `<span style="font-size: 8px; vertical-align: super; margin-right: 4px;">${v.verse}</span> ${v.text}`
+                    `${toSuperscript(v.verse.toString())} ${v.text}`
                 ).join(' ');
                 
-                const verseBlock = `<blockquote style="margin: 10px 0; padding: 10px; background-color: #F5F5DC; border: 1px solid #0B4619; border-radius: 5px; border-left: 4px solid #0B4619;">
-                    <div style="font-weight: bold; margin-bottom: 5px; color: #0B4619;">
-                        ${result.formattedReference.trim()}
-                    </div>
-                    <div style="color: #0B4619; line-height: 1.5;">
-                        ${verseText}
-                    </div>
-                </blockquote><p></p>`.trim();
+                const verseBlock = `
+                    <blockquote style="margin: 10px 0; padding: 10px; background-color: #F5F5DC; border: 1px solid #0B4619; border-radius: 5px; border-left: 4px solid #0B4619;">
+                        <div style="font-weight: bold; margin-bottom: 5px; color: #0B4619;">
+                            ${result.formattedReference.trim()}
+                        </div>
+                        <div style="color: #0B4619; line-height: 1.5;">
+                            ${verseText}
+                        </div>
+                    </blockquote>
+                    <p></p>
+                `.trim();
 
                 const currentContent = await editor.getHTML();
-                editor.setContent(`${currentContent.trim()}${verseBlock.trim()}`);
+                await editor.setContent(`${currentContent.trim()}${verseBlock}`);
                 
+                // Reset suggestion box and last processed reference
+                setSuggestionBox(prev => ({ ...prev, visible: false }));
+                lastProcessedReference.current = '';
                 setBibleReference('');
                 setIsBibleModalVisible(false);
             } else {
-                console.log('No verses found for reference:', bibleReference);
+                console.log('No verses found for reference:', verseToFetch);
+                // Reset suggestion box and last processed reference
+                setSuggestionBox(prev => ({ ...prev, visible: false }));
+                lastProcessedReference.current = '';
             }
         } catch (error) {
             console.error('Error inserting verse:', error);
+            // Reset suggestion box and last processed reference on error
+            setSuggestionBox(prev => ({ ...prev, visible: false }));
+            lastProcessedReference.current = '';
+        }
+    };
+
+    const lastProcessedReference = React.useRef('');
+
+    const checkForBibleReference = async (content: string) => {
+        const bibleRefRegex = /([1-3]?\s*[A-Za-z]+)\s*(\d+):(\d+)(?:-(\d+))?/g;
+        const matches = content.match(bibleRefRegex);
+
+        if (!matches) {
+            setSuggestionBox(prev => ({ ...prev, visible: false }));
+            lastProcessedReference.current = '';
+            return;
+        }
+
+        const lastMatch = matches[matches.length - 1];
+        const lastMatchIndex = content.lastIndexOf(lastMatch);
+        
+        // Check if there's significant content after the last match
+        const contentAfterMatch = content.slice(lastMatchIndex + lastMatch.length);
+        const hasNewContent = contentAfterMatch.length > 20 || contentAfterMatch.includes('\n');
+
+        // Hide suggestion box if there's new content after the match
+        if (hasNewContent) {
+            setSuggestionBox(prev => ({ ...prev, visible: false }));
+            lastProcessedReference.current = '';
+            return;
+        }
+
+        // Don't process if it's the same reference we just handled
+        if (lastMatch === lastProcessedReference.current) {
+            return;
+        }
+
+        try {
+            const result = await getVersesFromDB(lastMatch);
+            if (result.verses.length > 0) {
+                lastProcessedReference.current = lastMatch;
+                setSuggestionBox({
+                    visible: true,
+                    reference: result.formattedReference,
+                    position: {
+                        x: (window.innerWidth - 250) / 2,
+                        y: 20,
+                    },
+                    verses: result.verses
+                });
+            } else {
+                setSuggestionBox(prev => ({ ...prev, visible: false }));
+                lastProcessedReference.current = lastMatch;
+            }
+        } catch (error) {
+            console.error('Error fetching verse suggestion:', error);
+            setSuggestionBox(prev => ({ ...prev, visible: false }));
+            lastProcessedReference.current = lastMatch;
+        }
+    };
+
+    const handleShare = () => {
+        // Implement share functionality
+        console.log('Share pressed');
+    };
+
+    const handleBack = () => {
+        console.log('Back pressed');
+        // Try different navigation methods
+        try {
+            router.back();
+        } catch (error) {
+            console.error('Navigation error:', error);
+            try {
+                router.back();
+            } catch (e) {
+                console.error('Second navigation error:', e);
+                router.back();
+            }
         }
     };
 
     return (
         <View style={styles.container}>
             {/* Header */}
+            <Stack.Screen
+                options={{
+                    headerShown: true,
+                    headerLeft: () => (
+                        <TouchableOpacity 
+                            onPress={handleBack}
+                            style={{ marginLeft: 16, padding: 8 }} 
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="arrow-back" size={24} color="#F5F5DC" />
+                        </TouchableOpacity>
+                    ),
+                    headerRight: () => (
+                        <TouchableOpacity 
+                            onPress={handleShare}
+                            style={{ marginRight: 16 }}
+                        >
+                            <Ionicons name="share-outline" size={24} color="#F5F5DC" />
+                        </TouchableOpacity>
+                    ),
+                    headerTitle: '',
+                    headerStyle: {
+                        backgroundColor: '#0B4619',  // Slightly darker shade of cream
+                    },
+                    headerShadowVisible: false,
+                    contentStyle: {
+                        backgroundColor: '#F5F5DC',  // Keep main content background lighter
+                    },
+                }}
+            />
+
             <View style={styles.header}> 
                 <TextInput
                     style={styles.titleInput}
@@ -195,7 +380,7 @@ export default function NotePage() {
 
             {/* Content Editor */}
             <SafeAreaView style={[styles.fullScreen]}>
-                <RichText 
+                <RichText
                     editor={editor} 
                     style={styles.richText}
                 />
@@ -215,6 +400,37 @@ export default function NotePage() {
                     />
                 </SafeAreaView>
             </SafeAreaView>
+
+            {/* Bible Verse Suggestion Box */}
+            {suggestionBox.visible && (
+                <View style={[
+                    styles.suggestionBox,
+                    {
+                        position: 'absolute',
+                        left: suggestionBox.position.x,
+                        top: suggestionBox.position.y,
+                    }
+                ]}>
+                    <Text style={styles.suggestionReference}>{suggestionBox.reference}</Text>
+                    <ScrollView style={styles.suggestionContent}>
+                        {suggestionBox.verses.map((verse, index) => (
+                            <Text key={index} style={styles.suggestionText}>
+                                <Text style={styles.suggestionVerseNum}>{verse.verse}</Text>
+                                {" " + verse.text}
+                            </Text>
+                        ))}
+                    </ScrollView>
+                    <TouchableOpacity
+                        style={styles.insertButton}
+                        onPress={() => {
+                            handleInsertVerse(suggestionBox.reference);
+                            setSuggestionBox(prev => ({ ...prev, visible: false }));
+                        }}
+                    >
+                        <Text style={styles.insertButtonText}>Insert Verse</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
 
             {/* Tag Modal */}
             <Modal
@@ -251,6 +467,7 @@ export default function NotePage() {
                 </View>
             </Modal>
 
+            {/* Bible Modal */}
             <Modal
                 visible={isBibleModalVisible}
                 transparent
@@ -277,7 +494,7 @@ export default function NotePage() {
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.modalButton, styles.addButton]}
-                                onPress={handleInsertVerse}
+                                onPress={() => handleInsertVerse(bibleReference)}
                             >
                                 <Text style={styles.modalButtonText}>Insert</Text>
                             </TouchableOpacity>
@@ -482,5 +699,51 @@ const styles = StyleSheet.create({
         color: '#0B4619',
         marginBottom: 16,
         textAlign: 'center',
+    },
+    suggestionBox: {
+        backgroundColor: '#F5F5DC',
+        borderRadius: 8,
+        padding: 12,
+        width: 250, // Fixed width
+        maxHeight: 200, // Fixed max height
+        borderWidth: 1,
+        borderColor: '#0B4619',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
+        zIndex: 1000,
+    },
+    suggestionReference: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#0B4619',
+        marginBottom: 8,
+    },
+    suggestionText: {
+        fontSize: 14,
+        color: '#0B4619',
+        marginBottom: 4,
+    },
+    suggestionVerseNum: {
+        fontSize: 10,
+        color: '#0B4619',
+        verticalAlign: 'top',
+    },
+    insertButton: {
+        backgroundColor: '#0B4619',
+        padding: 8,
+        borderRadius: 4,
+        marginTop: 8,
+        alignItems: 'center',
+    },
+    insertButtonText: {
+        color: '#F5F5DC',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    suggestionContent: {
+        maxHeight: 150, // Leave space for reference and button
     },
 });

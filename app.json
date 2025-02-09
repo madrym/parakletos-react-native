@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "parakletos-react-native",
-    "slug": "parakletos-react-native",
+    "slug": "parakletos",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -14,13 +14,18 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mmadry.parakletos",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.mmadry.parakletos"
     },
     "web": {
       "bundler": "metro",
@@ -34,6 +39,15 @@
     "experiments": {
       "typedRoutes": true,
       "tsconfigPaths": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "dc4b6c4c-4a87-4ef4-b63b-4a737498303a"
+      }
+    },
+    "owner": "mmadry"
   }
 }
