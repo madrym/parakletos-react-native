@@ -1,151 +1,156 @@
-import React, { useState, useEffect } from 'react';
-import { DEFAULT_TOOLBAR_ITEMS, RichText, Toolbar, useEditorBridge } from '@10play/tentap-editor';
-import { View, TextInput, StyleSheet, Modal, TouchableOpacity, Text, ScrollView, SafeAreaView } from 'react-native';
-import { initialiseDB, getVersesFromDB } from '@/utils/initDB';
-import nivData from '@/data/NIV.json';
-import { NIVData } from '@/data/types';
-import { router, Stack } from 'expo-router';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, TextInput, StyleSheet, Modal, TouchableOpacity, Text, ScrollView, SafeAreaView, Keyboard, Platform, NativeSyntheticEvent, TextInputKeyPressEventData, Alert, Image } from 'react-native';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { Id } from '@/convex/_generated/dataModel';
+import { useUser } from '@clerk/clerk-expo';
+import { getVersesFromDB } from '@/app/utils/bible';
+import { NoteHeader } from '@/components/note/NoteHeader';
+import { BibleSuggestionBox } from '@/components/note/BibleSuggestionBox';
+import { MarkdownHelpPanel } from '@/components/note/MarkdownHelpPanel';
+import { TagModal } from '@/components/note/TagModal';
+import { BibleModal } from '@/components/note/BibleModal';
+import { FolderModal } from '@/components/note/FolderModal';
+import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
+import { Card, IconButton, Surface } from 'react-native-paper';
+import { BibleVerseCard } from '@/components/note/BibleVerseCard';
+
+declare global {
+    interface Window {
+        ReactNativeWebView: {
+            postMessage: (message: string) => void;
+        };
+    }
+}
+
+interface BibleVerse {
+    verse: number;
+    text: string;
+}
 
 interface Tag {
     id: string;
     name: string;
 }
 
+interface Folder {
+    _id: string;
+    name: string;
+}
+
+interface Note {
+    _id: string;
+    title: string;
+    content: string;
+    folderId?: Id<"folders">;
+    updatedAt: number;
+}
+
 export default function NotePage() {
+    const { id } = useLocalSearchParams<{ id: string }>();
+    const { user } = useUser();
+    const createNote = useMutation(api.mutations.createNote);
+    const updateNote = useMutation(api.mutations.updateNote);
+    const createFolder = useMutation(api.mutations.createFolder);
+    const getNote = useQuery(api.notes.getNotes, { userId: user?.id || '' });
+    const getFolders = useQuery(api.notes.getFolders, { userId: user?.id || '' });
+    const updateFolder = useMutation(api.mutations.updateFolder);
+    const deleteFolder = useMutation(api.mutations.deleteFolder);
+
+    // State declarations
     const [isDBInitialized, setIsDBInitialized] = useState(false);
     const [bibleVerses, setBibleVerses] = useState<{ reference: string; text: string; verses: any[] }[]>([]);
-
-    useEffect(() => {
-        async function initDB() {
-            try {
-                if (!nivData || !Array.isArray(nivData)) {
-                    console.error('Invalid NIV data format:', nivData);
-                    return;
-                }
-                console.log('Starting DB initialization with NIV data...'); // Debug log
-                await initialiseDB(nivData as NIVData[]);
-                setIsDBInitialized(true);
-                console.log('Database initialized successfully');
-                
-                // Verify initialization worked
-                const testVerse = await getVersesFromDB("John 3:16");
-                console.log('Test verse after initialization:', testVerse);
-            } catch (error) {
-                console.error('Error initializing database:', error);
-            }
-        }
-        initDB();
-    }, []);
-
-    // Wait for DB initialization before allowing verse fetching
-    const fetchBibleVerse = async (reference: string) => {
-        if (!isDBInitialized) {
-            console.log('Database not yet initialized');
-            return;
-        }
-        try {
-            console.log('Fetching verse:', reference);
-            const result = await getVersesFromDB(reference);
-            console.log('Fetch result:', result);
-            
-            if (result.verses.length > 0) {
-                setBibleVerses(prev => [...prev, {
-                    reference: result.formattedReference,
-                    text: result.verses.map(v => `${v.text} `).join(''),
-                    verses: result.verses // Store the complete verses array
-                }]);
-            } else {
-                console.log('No verses found for reference:', reference);
-            }
-        } catch (error) {
-            console.error('Error fetching verse:', error);
-        }
-    };
-
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [noteId, setNoteId] = useState<string | null>(null);
     const [title, setTitle] = useState('');
+    const [content, setContent] = useState('');
     const [tags, setTags] = useState<Tag[]>([]);
+    const [selectedFolderId, setSelectedFolderId] = useState<Id<"folders"> | undefined>();
+    const [isFolderModalVisible, setIsFolderModalVisible] = useState(false);
     const [isTagModalVisible, setIsTagModalVisible] = useState(false);
     const [newTag, setNewTag] = useState('');
-    const [folder, setFolder] = useState('Folder');
-    
+    const [isHelpVisible, setIsHelpVisible] = useState(false);
+    const [isBibleModalVisible, setIsBibleModalVisible] = useState(false);
+    const [bibleReference, setBibleReference] = useState('');
     const [suggestionBox, setSuggestionBox] = useState({
         visible: false,
         reference: '',
-        position: { x: 0, y: 0 },
         verses: [] as any[]
     });
+    const [editingVerseRef, setEditingVerseRef] = useState<string | null>(null);
 
-    const editor = useEditorBridge({
-        autofocus: true,
-        avoidIosKeyboard: true,
-        initialContent: '',
-        theme: {
-            toolbar: {
-                toolbarBody: {
-                    backgroundColor: '#F5F5DC',
-                },
-                toolbarButton: {
-                    backgroundColor: 'transparent',
-                },
-                icon: {
-                    tintColor: '#0B4619',
-                },
-                iconActive: {
-                    tintColor: '#0B4619',
-                    borderColor: '#0B4619',
-                },
-                iconWrapper: {
-                    backgroundColor: 'transparent',
-                },
-                iconWrapperActive: {
-                    backgroundColor: '#FFFFFF',
-                    borderColor: '#0B4619',
-                    borderWidth: 1,
-                },
-            },
-            colorKeyboard: {},
-            webview: {},
-            webviewContainer: {}
-        },
-    });
+    // Refs
+    const lastProcessedReference = React.useRef('');
+    const richText = useRef<RichEditor>(null);
 
-    // Inject custom CSS for verse numbers
+    // Load note data first
     useEffect(() => {
-        if (editor) {
-            const verseNumberCSS = `
-                sup.verse-number {
-                    color: rgb(0, 0, 0) !important;
-                    font-size: 0.8em !important;
-                    padding-right: 3px !important;
-                }
-                /* If using span instead of sup */
-                span.verse-number {
-                    color: rgb(0, 0, 0) !important;
-                    font-size: 0.8em !important;
-                    vertical-align: super !important;
-                    padding-right: 3px !important;
-                }
-            `;
-            editor.injectCSS(verseNumberCSS, 'verse-number-styles');
-        }
-    }, [editor]);
-
-    const [editorContent, setEditorContent] = useState('');
-    useEffect(() => {
-        const checkContent = async () => {
-            if (editor) {
-                const content = await editor.getHTML();
-                setEditorContent(content);
-                checkForBibleReference(content);
+        if (user && id && getNote && !noteId) {
+            const note = getNote.find(n => n._id === id);
+            if (note) {
+                setNoteId(note._id);
+                setTitle(note.title);
+                setContent(note.content);
+                setTags(note.tags.map(tag => ({ id: tag, name: tag })));
+                setSelectedFolderId(note.folderId as Id<"folders">);
             }
-        };
+        }
+    }, [user, id, getNote, noteId]);
 
-        // Set up an interval to check content
-        const interval = setInterval(checkContent, 1000);
+    // Load content into editor after initialization
+    useEffect(() => {
+        if (richText.current && content && !isDBInitialized) {
+            richText.current.setContentHTML(content);
+            setIsDBInitialized(true);
+        }
+    }, [content, isDBInitialized]);
 
-        return () => clearInterval(interval);
-    }, [editor]);
+    // Manual save function
+    const handleSave = React.useCallback(async () => {
+        if (!user || !id || !richText.current) return;
+        
+        setIsSaving(true);
+        setSaveError(null);
+        try {
+            const content = await richText.current.getContentHtml();
+            await updateNote({
+                id: id as Id<"notes">,
+                title,
+                content,
+                folderId: selectedFolderId,
+                tags: tags.map(tag => tag.name),
+            });
+            setSaveError(null);
+        } catch (error) {
+            console.error('Error saving:', error);
+            setSaveError('Failed to save changes. Click to retry.');
+            Alert.alert('Error', 'Failed to save note. Please try again.');
+        } finally {
+            setIsSaving(false);
+        }
+    }, [user, id, title, selectedFolderId, tags, updateNote]);
+
+    // Handlers
+    const handleCreateFolder = async (name: string) => {
+        if (!user) return;
+        try {
+            await createFolder({
+                name,
+                emoji: "📁",
+                userId: user.id,
+            });
+        } catch (error) {
+            console.error('Error creating folder:', error);
+            Alert.alert('Error', 'Failed to create folder. Please try again.');
+        }
+    };
+
+    const handleSelectFolder = async (folderId: Id<"folders">) => {
+        setSelectedFolderId(folderId);
+    };
 
     const handleAddTag = () => {
         if (newTag.trim()) {
@@ -159,135 +164,26 @@ export default function NotePage() {
         setTags(tags.filter(tag => tag.id !== tagId));
     };
 
-    const [isBibleModalVisible, setIsBibleModalVisible] = useState(false);
-    const [bibleReference, setBibleReference] = useState('');
-
-    const handleInsertVerse = async (reference?: string) => {
-        const verseToFetch = reference || bibleReference;
-        if (!verseToFetch.trim()) return;
-        
+    const handleUpdateFolder = async (id: Id<"folders">, name: string, emoji: string) => {
         try {
-            const result = await getVersesFromDB(verseToFetch);
-            if (result.verses.length > 0) {
-                // Map regular numbers to Unicode superscripts
-                const supMap: { [key: string]: string } = {
-                    '0': '⁰',
-                    '1': '¹',
-                    '2': '²',
-                    '3': '³',
-                    '4': '⁴',
-                    '5': '⁵',
-                    '6': '⁶',
-                    '7': '⁷',
-                    '8': '⁸',
-                    '9': '⁹',
-                };
-                
-                const toSuperscript = (num: string) => {
-                    return num.split('').map(digit => supMap[digit] || digit).join('');
-                };
-                
-                const verseText = result.verses.map(v => 
-                    `${toSuperscript(v.verse.toString())} ${v.text}`
-                ).join(' ');
-                
-                const verseBlock = `
-                    <blockquote style="margin: 10px 0; padding: 10px; background-color: #F5F5DC; border: 1px solid #0B4619; border-radius: 5px; border-left: 4px solid #0B4619;">
-                        <div style="font-weight: bold; margin-bottom: 5px; color: #0B4619;">
-                            ${result.formattedReference.trim()}
-                        </div>
-                        <div style="color: #0B4619; line-height: 1.5;">
-                            ${verseText}
-                        </div>
-                    </blockquote>
-                    <p></p>
-                `.trim();
-
-                const currentContent = await editor.getHTML();
-                await editor.setContent(`${currentContent.trim()}${verseBlock}`);
-                
-                // Reset suggestion box and last processed reference
-                setSuggestionBox(prev => ({ ...prev, visible: false }));
-                lastProcessedReference.current = '';
-                setBibleReference('');
-                setIsBibleModalVisible(false);
-            } else {
-                console.log('No verses found for reference:', verseToFetch);
-                // Reset suggestion box and last processed reference
-                setSuggestionBox(prev => ({ ...prev, visible: false }));
-                lastProcessedReference.current = '';
-            }
+            await updateFolder({ id, name, emoji });
         } catch (error) {
-            console.error('Error inserting verse:', error);
-            // Reset suggestion box and last processed reference on error
-            setSuggestionBox(prev => ({ ...prev, visible: false }));
-            lastProcessedReference.current = '';
+            console.error('Error updating folder:', error);
+            Alert.alert('Error', 'Failed to update folder. Please try again.');
         }
     };
 
-    const lastProcessedReference = React.useRef('');
-
-    const checkForBibleReference = async (content: string) => {
-        const bibleRefRegex = /([1-3]?\s*[A-Za-z]+)\s*(\d+):(\d+)(?:-(\d+))?/g;
-        const matches = content.match(bibleRefRegex);
-
-        if (!matches) {
-            setSuggestionBox(prev => ({ ...prev, visible: false }));
-            lastProcessedReference.current = '';
-            return;
-        }
-
-        const lastMatch = matches[matches.length - 1];
-        const lastMatchIndex = content.lastIndexOf(lastMatch);
-        
-        // Check if there's significant content after the last match
-        const contentAfterMatch = content.slice(lastMatchIndex + lastMatch.length);
-        const hasNewContent = contentAfterMatch.length > 20 || contentAfterMatch.includes('\n');
-
-        // Hide suggestion box if there's new content after the match
-        if (hasNewContent) {
-            setSuggestionBox(prev => ({ ...prev, visible: false }));
-            lastProcessedReference.current = '';
-            return;
-        }
-
-        // Don't process if it's the same reference we just handled
-        if (lastMatch === lastProcessedReference.current) {
-            return;
-        }
-
+    const handleDeleteFolder = async (id: Id<"folders">) => {
         try {
-            const result = await getVersesFromDB(lastMatch);
-            if (result.verses.length > 0) {
-                lastProcessedReference.current = lastMatch;
-                setSuggestionBox({
-                    visible: true,
-                    reference: result.formattedReference,
-                    position: {
-                        x: (window.innerWidth - 250) / 2,
-                        y: 20,
-                    },
-                    verses: result.verses
-                });
-            } else {
-                setSuggestionBox(prev => ({ ...prev, visible: false }));
-                lastProcessedReference.current = lastMatch;
-            }
+            await deleteFolder({ id });
         } catch (error) {
-            console.error('Error fetching verse suggestion:', error);
-            setSuggestionBox(prev => ({ ...prev, visible: false }));
-            lastProcessedReference.current = lastMatch;
+            console.error('Error deleting folder:', error);
+            Alert.alert('Error', 'Failed to delete folder. Please try again.');
         }
-    };
-
-    const handleShare = () => {
-        // Implement share functionality
-        console.log('Share pressed');
     };
 
     const handleBack = () => {
         console.log('Back pressed');
-        // Try different navigation methods
         try {
             router.back();
         } catch (error) {
@@ -301,9 +197,393 @@ export default function NotePage() {
         }
     };
 
+    const handleShare = () => {
+        console.log('Share pressed');
+    };
+
+    const handleTagInputKeyPress = (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
+        if (e.nativeEvent.key === 'Enter' && newTag.trim()) {
+            handleAddTag();
+        } else if (e.nativeEvent.key === 'Escape') {
+            setIsTagModalVisible(false);
+        }
+    };
+
+    const toSuperscript = (num: number): string => {
+        const superscriptMap = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+        return num.toString().split('').map(d => superscriptMap[parseInt(d)]).join('');
+    };
+
+    const createVerseBlock = (reference: string, verses: BibleVerse[]) => {
+        const verseBlockId = `verse-${Date.now()}`;
+        
+        return `
+            <div id="${verseBlockId}" class="bible-verse-block" contenteditable="false" data-reference="${reference.trim()}" data-expanded="true">
+                <div class="verse-card">
+                    <div class="verse-header">
+                        <div class="verse-title" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({
+                            type: 'toggle-verse',
+                            id: 'toggle-verse-${Date.now()}',
+                            data: { reference: '${reference.trim()}' }
+                        }))">${reference.trim()}</div>
+                        <div class="verse-actions">
+                            <button class="icon-button edit-button" onclick="(function(e) { 
+                                e.stopPropagation(); 
+                                window.ReactNativeWebView.postMessage(JSON.stringify({
+                                    type: 'edit-verse',
+                                    id: 'edit-verse-${Date.now()}',
+                                    data: { reference: '${reference.trim()}' }
+                                }));
+                            })(event)">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                                </svg>
+                            </button>
+                            <button class="icon-button delete-button" onclick="(function(e) { 
+                                e.stopPropagation(); 
+                                window.ReactNativeWebView.postMessage(JSON.stringify({
+                                    type: 'delete-verse',
+                                    id: 'delete-verse-${Date.now()}',
+                                    data: { reference: '${reference.trim()}' }
+                                }));
+                            })(event)">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="verse-content">
+                        <p class="verse-paragraph">
+                            ${verses.map(verse => `<span class="verse-text"><span class="verse-number">${verse.verse}</span>${verse.text}</span>`).join(' ')}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <p><br></p>
+        `.trim();
+    };
+
+    const cssText = `
+        html {
+            height: 100%;
+            background-color: #F5F5DC;
+        }
+        
+        body {
+            min-height: 100%;
+            margin: 0;
+            padding: 8px;
+            background-color: #F5F5DC;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #editor {
+            min-height: 100vh;
+            padding-bottom: 100px;
+        }
+
+        p {
+            min-height: 1em;
+        }
+
+        .bible-verse-block {
+            margin: 8px 0;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            max-width: 100%;
+            position: relative;
+        }
+
+        .verse-card {
+            padding: 0;
+            position: relative;
+        }
+
+        .verse-header {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #ffffff;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .verse-title {
+            font-size: 16px;
+            font-weight: 500;
+            color: #0B4619;
+            cursor: pointer;
+            flex: 1;
+            padding: 4px 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .verse-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            z-index: 2;
+        }
+
+        .icon-button {
+            background: none;
+            border: none;
+            padding: 8px;
+            margin: 0;
+            cursor: pointer;
+            opacity: 0.8;
+            border-radius: 20px;
+            color: #0B4619;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 32px;
+            min-height: 32px;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .icon-button:active {
+            opacity: 1;
+            background-color: rgba(11, 70, 25, 0.08);
+        }
+
+        .delete-button:active {
+            color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.08);
+        }
+
+        .verse-content {
+            padding: 16px;
+            background-color: #ffffff;
+            overflow-x: hidden;
+            overflow-y: auto;
+            max-height: 300px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .verse-paragraph {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #0B4619;
+            margin: 0;
+            padding: 0;
+            text-align: justify;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+            hyphens: auto;
+        }
+
+        .verse-text {
+            display: inline;
+            margin-right: 4px;
+        }
+
+        .verse-number {
+            font-size: 10px;
+            line-height: 1;
+            color: #0B4619;
+            opacity: 0.7;
+            margin-right: 2px;
+            vertical-align: super;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .bible-verse-block[data-expanded="false"] .verse-content {
+            display: none;
+        }
+
+        /* Ensure proper scrolling behavior */
+        * {
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Prevent text selection in non-editable areas */
+        [contenteditable="false"] {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+    `;
+
+    const handleInsertVerse = async (reference?: string) => {
+        const verseToFetch = reference || bibleReference;
+        if (!verseToFetch.trim() || !richText.current) return;
+        
+        try {
+            const result = await getVersesFromDB(verseToFetch);
+            if (result.verses.length > 0) {
+                const verseBlock = createVerseBlock(result.formattedReference, result.verses);
+                richText.current.insertHTML(verseBlock);
+                
+                if (editingVerseRef) {
+                    richText.current.getContentHtml().then(content => {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = content;
+                        const oldVerseBlock = tempDiv.querySelector(`[data-reference="${editingVerseRef}"]`);
+                        if (oldVerseBlock) {
+                            oldVerseBlock.remove();
+                            richText.current?.setContentHTML(tempDiv.innerHTML);
+                        }
+                    });
+                    setEditingVerseRef(null);
+                }
+                
+                setSuggestionBox(prev => ({ ...prev, visible: false }));
+                lastProcessedReference.current = '';
+                setBibleReference('');
+                setIsBibleModalVisible(false);
+
+                setTimeout(() => {
+                    const webview = richText.current as any;
+                    webview?.focusContentEditor();
+                }, 100);
+            }
+        } catch (error) {
+            console.error('Error inserting verse:', error);
+        }
+    };
+
+    const checkForBibleReference = async (content: string) => {
+        // Match patterns like:
+        // Gen 1, Genesis 1, Gen 1:1, Gen 1:1-5
+        const bibleRefRegex = /\b([1-3]?\s*[A-Za-z]+)\s*(\d+)(?::(\d+)(?:-(\d+))?)?\b/g;
+        const matches = content.match(bibleRefRegex);
+
+        if (!matches) {
+            setSuggestionBox(prev => ({ ...prev, visible: false }));
+            lastProcessedReference.current = '';
+            return;
+        }
+
+        const lastMatch = matches[matches.length - 1];
+        const lastMatchIndex = content.lastIndexOf(lastMatch);
+        
+        // Hide suggestion if there's significant content after the reference
+        const contentAfterMatch = content.slice(lastMatchIndex + lastMatch.length);
+        const hasNewContent = contentAfterMatch.length > 20 || contentAfterMatch.includes('\n');
+
+        if (hasNewContent) {
+            setSuggestionBox(prev => ({ ...prev, visible: false }));
+            lastProcessedReference.current = '';
+            return;
+        }
+
+        // Don't re-fetch if we're already showing this reference
+        if (lastMatch === lastProcessedReference.current) {
+            return;
+        }
+
+        try {
+            const result = await getVersesFromDB(lastMatch);
+            if (result.verses.length > 0) {
+                lastProcessedReference.current = lastMatch;
+                setSuggestionBox({
+                    visible: true,
+                    reference: result.formattedReference,
+                    verses: result.verses
+                });
+            } else {
+                setSuggestionBox(prev => ({ ...prev, visible: false }));
+                lastProcessedReference.current = lastMatch;
+            }
+        } catch (error) {
+            console.error('Error fetching verse suggestion:', error);
+            setSuggestionBox(prev => ({ ...prev, visible: false }));
+            lastProcessedReference.current = lastMatch;
+        }
+    };
+
+    // Remove the old click handler effect
+    useEffect(() => {
+        if (!richText.current) return;
+        
+        // Inject custom script to handle verse block interactions
+        richText.current.injectJavascript(`
+            document.addEventListener('click', function(event) {
+                const target = event.target;
+                const verseBlock = target.closest('.bible-verse-block');
+                
+                if (!verseBlock) return;
+
+                // Handle verse header click for collapse/expand
+                if (target.closest('.verse-header') && !target.closest('button')) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const isExpanded = verseBlock.getAttribute('data-expanded') === 'true';
+                    verseBlock.setAttribute('data-expanded', !isExpanded);
+                    verseBlock.classList.toggle('collapsed', !isExpanded);
+                }
+            });
+            true;
+        `);
+    }, [richText.current]);
+
+    const handleBibleSearch = async () => {
+        if (!richText.current) return;
+        
+        try {
+            const content = await richText.current.getContentHtml();
+            checkForBibleReference(content);
+        } catch (error) {
+            console.error('Error checking for Bible references:', error);
+        }
+    };
+
+    const handleTitleChange = (newTitle: string) => {
+        setTitle(newTitle);
+        // Trigger save when title changes
+        handleSave();
+    };
+
+    const handleMessage = (message: { type: string; id: string; data?: any }) => {
+        try {
+            if (message.type === 'edit-verse' && message.data?.reference) {
+                setEditingVerseRef(message.data.reference);
+                setBibleReference(message.data.reference);
+                setIsBibleModalVisible(true);
+            } else if (message.type === 'delete-verse' && message.data?.reference) {
+                richText.current?.getContentHtml()
+                    .then((html: string) => {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = html;
+                        const block = tempDiv.querySelector(`[data-reference="${message.data.reference}"]`);
+                        if (block) {
+                            block.remove();
+                            richText.current?.setContentHTML(tempDiv.innerHTML);
+                            handleSave(); // Save after deletion
+                        }
+                    });
+            } else if (message.type === 'toggle-verse' && message.data?.reference) {
+                richText.current?.getContentHtml()
+                    .then((html: string) => {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = html;
+                        const block = tempDiv.querySelector(`[data-reference="${message.data.reference}"]`);
+                        if (block) {
+                            const isExpanded = block.getAttribute('data-expanded') === 'true';
+                            block.setAttribute('data-expanded', (!isExpanded).toString());
+                            richText.current?.setContentHTML(tempDiv.innerHTML);
+                            handleSave(); // Save after toggling
+                        }
+                    });
+            }
+        } catch (error) {
+            console.error('Error handling message:', error);
+        }
+    };
+
     return (
         <View style={styles.container}>
-            {/* Header */}
             <Stack.Screen
                 options={{
                     headerShown: true,
@@ -317,191 +597,147 @@ export default function NotePage() {
                         </TouchableOpacity>
                     ),
                     headerRight: () => (
-                        <TouchableOpacity 
-                            onPress={handleShare}
-                            style={{ marginRight: 16 }}
-                        >
-                            <Ionicons name="share-outline" size={24} color="#F5F5DC" />
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 16 }}>
+                            <TouchableOpacity 
+                                onPress={handleBibleSearch}
+                                style={{ marginRight: 16 }}
+                            >
+                                <Ionicons name="search" size={24} color="#F5F5DC" />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                onPress={() => setIsHelpVisible(true)}
+                                style={{ marginRight: 16 }}
+                            >
+                                <Ionicons name="help-circle-outline" size={24} color="#F5F5DC" />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleShare}>
+                                <Ionicons name="share-outline" size={24} color="#F5F5DC" />
+                            </TouchableOpacity>
+                        </View>
                     ),
                     headerTitle: '',
                     headerStyle: {
-                        backgroundColor: '#0B4619',  // Slightly darker shade of cream
+                        backgroundColor: '#0B4619',
                     },
                     headerShadowVisible: false,
                     contentStyle: {
-                        backgroundColor: '#F5F5DC',  // Keep main content background lighter
+                        backgroundColor: '#F5F5DC',
                     },
                 }}
             />
 
-            <View style={styles.header}> 
-                <TextInput
-                    style={styles.titleInput}
-                    value={title}
-                    onChangeText={setTitle}
-                    placeholder="Untitled"
-                    placeholderTextColor="#0B4619"
-                />
+            <NoteHeader
+                title={title}
+                setTitle={handleTitleChange}
+                tags={tags}
+                folder={getFolders?.find(f => f._id === selectedFolderId)?.name || 'Select Folder'}
+                onAddTag={() => setIsTagModalVisible(true)}
+                onRemoveTag={handleRemoveTag}
+                isSaved={!isSaving}
+                isAutoSaving={false}
+                onSave={handleSave}
+                saveError={saveError}
+                onFolderPress={() => setIsFolderModalVisible(true)}
+            />
 
-                <View style={styles.tagsSection}>
-                    <Text style={styles.tagsLabel}>Tags:</Text>
-                    <ScrollView 
-                        horizontal 
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.tagsScrollView}
-                    >
-                        {tags.map(tag => (
-                            <TouchableOpacity
-                                key={tag.id}
-                                style={styles.tag}
-                                onPress={() => handleRemoveTag(tag.id)}
-                            >
-                                <Text style={styles.tagText}>{tag.name}</Text>
-                            </TouchableOpacity>
-                        ))}
-                        <TouchableOpacity
-                            style={styles.addTagSmall}
-                            onPress={() => setIsTagModalVisible(true)}
-                        >
-                            <Text style={styles.addTagSmallText}>+</Text>
-                        </TouchableOpacity>
-                    </ScrollView>
-                </View>
-
-                <View style={styles.folderRow}>
-                    <TouchableOpacity style={styles.folderSelector}>
-                        <Text style={styles.folderText}>{folder}</Text>
-                        <Text style={styles.dropdownIcon}>▼</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.dateText}>{new Date().toLocaleDateString()}</Text>
-                </View>
-            </View>
-
-            {/* Content Editor */}
-            <SafeAreaView style={[styles.fullScreen]}>
-                <RichText
-                    editor={editor} 
-                    style={styles.richText}
-                />
-                <SafeAreaView style={[styles.toolbar]}>
-                    <Toolbar editor={editor}
-                        items={[
-                            {
-                                onPress: ({editor}) => () => {
-                                    setIsBibleModalVisible(true);
-                                },
-                                active: () => false,
-                                disabled: () => false,
-                                image: () => require('../../assets/images/bible.png'),
-                            },
-                            ...DEFAULT_TOOLBAR_ITEMS,
-                        ]}
+            <SafeAreaView style={styles.fullScreen}>
+                <View style={styles.editorContainer}>
+                    <RichEditor
+                        ref={richText}
+                        style={styles.richText}
+                        placeholder="Start writing..."
+                        initialContentHTML={content}
+                        editorInitializedCallback={() => {
+                            setIsDBInitialized(true);
+                        }}
+                        onChange={handleSave}
+                        onMessage={handleMessage}
+                        scrollEnabled={true}
+                        useContainer={true}
+                        containerStyle={styles.editorScrollContainer}
+                        editorStyle={{
+                            backgroundColor: '#F5F5DC',
+                            color: '#0B4619',
+                            placeholderColor: '#999',
+                            cssText: cssText,
+                            contentCSSText: cssText,
+                            initialCSSText: cssText,
+                        }}
                     />
-                </SafeAreaView>
+                    {suggestionBox.visible && (
+                        <BibleSuggestionBox
+                            reference={suggestionBox.reference}
+                            verses={suggestionBox.verses}
+                            onInsert={(ref) => {
+                                handleInsertVerse(ref);
+                                setSuggestionBox(prev => ({ ...prev, visible: false }));
+                            }}
+                        />
+                    )}
+                </View>
+                <RichToolbar
+                    editor={richText}
+                    style={styles.toolbar}
+                    iconTint="#0B4619"
+                    selectedIconTint="#0B4619"
+                    actions={[
+                        actions.setBold,
+                        actions.setItalic,
+                        actions.setUnderline,
+                        actions.heading1,
+                        actions.heading2,
+                        actions.insertBulletsList,
+                        actions.insertOrderedList,
+                        actions.insertLink,
+                        actions.keyboard,
+                        actions.setStrikethrough,
+                        'insertBible',
+                    ]}
+                    iconMap={{
+                        insertBible: ({ tintColor }: { tintColor: string }) => (
+                            <TouchableOpacity onPress={() => setIsBibleModalVisible(true)}>
+                                <Image 
+                                    source={require('../../assets/images/bible.png')} 
+                                    style={{ width: 20, height: 20, tintColor }}
+                                />
+                            </TouchableOpacity>
+                        ),
+                    }}
+                />
             </SafeAreaView>
 
-            {/* Bible Verse Suggestion Box */}
-            {suggestionBox.visible && (
-                <View style={[
-                    styles.suggestionBox,
-                    {
-                        position: 'absolute',
-                        left: suggestionBox.position.x,
-                        top: suggestionBox.position.y,
-                    }
-                ]}>
-                    <Text style={styles.suggestionReference}>{suggestionBox.reference}</Text>
-                    <ScrollView style={styles.suggestionContent}>
-                        {suggestionBox.verses.map((verse, index) => (
-                            <Text key={index} style={styles.suggestionText}>
-                                <Text style={styles.suggestionVerseNum}>{verse.verse}</Text>
-                                {" " + verse.text}
-                            </Text>
-                        ))}
-                    </ScrollView>
-                    <TouchableOpacity
-                        style={styles.insertButton}
-                        onPress={() => {
-                            handleInsertVerse(suggestionBox.reference);
-                            setSuggestionBox(prev => ({ ...prev, visible: false }));
-                        }}
-                    >
-                        <Text style={styles.insertButtonText}>Insert Verse</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
+            <TagModal
+                isVisible={isTagModalVisible}
+                onClose={() => setIsTagModalVisible(false)}
+                onAdd={handleAddTag}
+                value={newTag}
+                onChangeText={setNewTag}
+                onKeyPress={handleTagInputKeyPress}
+            />
 
-            {/* Tag Modal */}
-            <Modal
-                visible={isTagModalVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setIsTagModalVisible(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <TextInput
-                            style={styles.tagInput}
-                            value={newTag}
-                            onChangeText={setNewTag}
-                            placeholder="Enter tag name"
-                            placeholderTextColor="#0B4619"
-                            autoFocus
-                        />
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={styles.modalButton}
-                                onPress={() => setIsTagModalVisible(false)}
-                            >
-                                <Text style={[styles.modalButtonText, { color: '#0B4619' }]}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.addButton]}
-                                onPress={handleAddTag}
-                            >
-                                <Text style={styles.modalButtonText}>Add</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            <MarkdownHelpPanel 
+                isVisible={isHelpVisible}
+                onClose={() => setIsHelpVisible(false)}
+            />
 
-            {/* Bible Modal */}
-            <Modal
-                visible={isBibleModalVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setIsBibleModalVisible(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Insert Bible Verse</Text>
-                        <TextInput
-                            style={styles.tagInput}
-                            value={bibleReference}
-                            onChangeText={setBibleReference}
-                            placeholder="Enter reference (e.g., John 3:16)"
-                            placeholderTextColor="#0B4619"
-                            autoFocus
-                        />
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={styles.modalButton}
-                                onPress={() => setIsBibleModalVisible(false)}
-                            >
-                                <Text style={[styles.modalButtonText, { color: '#0B4619' }]}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.addButton]}
-                                onPress={() => handleInsertVerse(bibleReference)}
-                            >
-                                <Text style={styles.modalButtonText}>Insert</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            <BibleModal
+                isVisible={isBibleModalVisible}
+                onClose={() => setIsBibleModalVisible(false)}
+                onInsert={() => handleInsertVerse(bibleReference)}
+                value={bibleReference}
+                onChangeText={setBibleReference}
+            />
+
+            <FolderModal
+                isVisible={isFolderModalVisible}
+                onClose={() => setIsFolderModalVisible(false)}
+                folders={getFolders || []}
+                selectedFolderId={selectedFolderId}
+                onSelectFolder={handleSelectFolder}
+                onCreateFolder={handleCreateFolder}
+                onUpdateFolder={handleUpdateFolder}
+                onDeleteFolder={handleDeleteFolder}
+            />
         </View>
     );
 }
@@ -510,116 +746,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#F5F5DC',
-    },
-    header: {
-        paddingHorizontal: 16,
-        paddingTop: 8,
-        backgroundColor: '#F5F5DC',
-    },
-    titleInput: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        color: '#0B4619',
-        marginBottom: 16,
-        padding: 0,
-    },
-    tagsSection: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    tagsLabel: {
-        fontSize: 16,
-        color: '#666',
-        marginRight: 8,
-    },
-    addTagSmall: {
-        width: 24,
-        height: 24,
-        borderWidth: 1,
-        borderColor: '#666',
-        borderRadius: 4,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    addTagSmallText: {
-        fontSize: 16,
-        color: '#666',
-    },
-    folderSelector: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginRight: 16,
-    },
-    folderText: {
-        fontSize: 16,
-        color: '#0B4619',
-        marginRight: 4,
-    },
-    dropdownIcon: {
-        fontSize: 12,
-        color: '#0B4619',
-    },
-    dateText: {
-        fontSize: 16,
-        color: '#0B4619',
-    },
-    tagsScrollView: {
-        flexGrow: 0,
-        flexShrink: 1,
-    },
-    tag: {
-        backgroundColor: '#0B4619',
-        borderRadius: 16,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        marginRight: 8,
-    },
-    tagText: {
-        fontSize: 14,
-        color: '#F5F5DC',
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    modalContent: {
-        backgroundColor: '#F5F5DC',
-        borderRadius: 12,
-        padding: 20,
-        width: '80%',
-        maxWidth: 400,
-        borderWidth: 1,
-        borderColor: '#0B4619',
-    },
-    tagInput: {
-        borderWidth: 1,
-        borderColor: '#0B4619',
-        borderRadius: 8,
-        padding: 12,
-        marginBottom: 16,
-        fontSize: 16,
-        backgroundColor: '#F5F5DC',
-        color: '#0B4619',
-    },
-    modalButtons: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-    },
-    modalButton: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        marginLeft: 8,
-    },
-    addButton: {
-        backgroundColor: '#0B4619',
-        borderRadius: 8,
-    },
-    modalButtonText: {
-        fontSize: 16,
-        color: '#F5F5DC',
     },
     fullScreen: {
         flex: 1,
@@ -630,120 +756,22 @@ const styles = StyleSheet.create({
         paddingLeft: 16,
         paddingRight: 16,
     },
-    toolbar: {
-        minHeight: 50,
-        maxHeight: 100,
+    editorContainer: {
+        flex: 1,
+        position: 'relative',
         backgroundColor: '#F5F5DC',
-        paddingTop: 10,
-        borderTopWidth: 1,
-        borderTopColor: '#0B4619',
     },
-    folderRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 8,
+    editorScrollContainer: {
+        flex: 1,
     },
     richText: {
         flex: 1,
-        padding: 20,
-        fontSize: 16,
-        color: '#0B4619',
         backgroundColor: '#F5F5DC',
     },
-    verseButton: {
-        backgroundColor: '#0B4619',
-        padding: 10,
-        borderRadius: 5,
-        margin: 10,
-    },
-    verseButtonText: {
-        color: '#F5F5DC',
-        textAlign: 'center',
-    },
-    versesContainer: {
-        maxHeight: 200,
-        margin: 10,
-    },
-    verseItem: {
-        marginBottom: 10,
-        padding: 10,
+    toolbar: {
+        minHeight: 50,
         backgroundColor: '#F5F5DC',
-        borderRadius: 5,
-        borderColor: '#0B4619',
-        borderWidth: 1,
-    },
-    verseReference: {
-        fontWeight: 'bold',
-        color: '#0B4619',
-        marginBottom: 5,
-    },
-    verseTextContainer: {
-        color: '#0B4619',
-        lineHeight: 24,
-        fontSize: 16,
-    },
-    verseNumber: {
-        fontSize: 10,
-        color: '#0B4619',
-        lineHeight: 10,
-        top: -5,
-        marginRight: 1,
-    },
-    verseText: {
-        color: '#0B4619',
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#0B4619',
-        marginBottom: 16,
-        textAlign: 'center',
-    },
-    suggestionBox: {
-        backgroundColor: '#F5F5DC',
-        borderRadius: 8,
-        padding: 12,
-        width: 250, // Fixed width
-        maxHeight: 200, // Fixed max height
-        borderWidth: 1,
-        borderColor: '#0B4619',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-        zIndex: 1000,
-    },
-    suggestionReference: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#0B4619',
-        marginBottom: 8,
-    },
-    suggestionText: {
-        fontSize: 14,
-        color: '#0B4619',
-        marginBottom: 4,
-    },
-    suggestionVerseNum: {
-        fontSize: 10,
-        color: '#0B4619',
-        verticalAlign: 'top',
-    },
-    insertButton: {
-        backgroundColor: '#0B4619',
-        padding: 8,
-        borderRadius: 4,
-        marginTop: 8,
-        alignItems: 'center',
-    },
-    insertButtonText: {
-        color: '#F5F5DC',
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    suggestionContent: {
-        maxHeight: 150, // Leave space for reference and button
+        borderTopWidth: 1,
+        borderTopColor: '#0B4619',
     },
 });

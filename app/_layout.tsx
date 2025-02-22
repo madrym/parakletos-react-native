@@ -1,40 +1,39 @@
-import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
-import { Ionicons } from '@expo/vector-icons';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { router, Stack, useRouter, useSegments } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
+import { SplashScreen, Stack } from 'expo-router';
 import { useEffect } from 'react';
-import { TouchableOpacity } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
-import TopBanner from '../components/TopBanner';
+import { useColorScheme } from 'react-native';
+import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
+import { ConvexProvider, ConvexReactClient } from 'convex/react';
+import { useWarmUpBrowser } from '../hooks/useWarmUpBrowser';
+import { initializeDatabase } from './utils/bible';
 
-const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
-// Cache the Clerk JWT
-const tokenCache = {
-  async getToken(key: string) {
-    try {
-      return SecureStore.getItemAsync(key);
-    } catch (err) {
-      return null;
-    }
-  },
-  async saveToken(key: string, value: string) {
-    try {
-      return SecureStore.setItemAsync(key, value);
-    } catch (err) {
-      return;
-    }
-  },
+const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || '';
+const CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_URL || '';
+
+const convex = new ConvexReactClient(CONVEX_URL);
+
+export {
+  // Catch any errors thrown by the Layout component.
+  ErrorBoundary,
+} from 'expo-router';
+
+export const unstable_settings = {
+  // Ensure that reloading on `/modal` keeps a back button present.
+  initialRouteName: '(tabs)',
 };
+
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    'mon': require('../assets/fonts/Montserrat-Regular.ttf'),
-    'mon-b': require('../assets/fonts/Montserrat-Bold.ttf'),
-    'mon-sb': require('../assets/fonts/Montserrat-SemiBold.ttf'),
+    SpaceMono: require('../assets/fonts/Montserrat-Regular.ttf'),
+    ...FontAwesome.font,
   });
+
+  useWarmUpBrowser();
 
   // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
@@ -52,61 +51,42 @@ export default function RootLayout() {
   }
 
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY!} tokenCache={tokenCache}>
-      <RootLayoutNav />
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+      <ConvexProvider client={convex}>
+        <RootLayoutNav />
+      </ConvexProvider>
     </ClerkProvider>
   );
 }
 
 function RootLayoutNav() {
+  const colorScheme = useColorScheme();
   const { isLoaded, isSignedIn } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
 
   useEffect(() => {
-    if (!isLoaded) return;
-    
-    const inAuthGroup = segments[0] === '(modals)';
-    const isRootRoute = segments[0] === undefined;
-    
-    // Check if the current path is valid
-    const isKnownPath = ['(tabs)', '(modals)', undefined].includes(segments[0]);
-
-    // Handle navigation based on auth state and path
-    if (!isSignedIn) {
-      // If not signed in, redirect to login
-      if (!inAuthGroup) {
-        router.replace('/(modals)/login');
+    const init = async () => {
+      try {
+        await initializeDatabase();
+      } catch (error) {
+        console.error('Failed to initialize database:', error);
       }
-    } else {
-      // If signed in...
-      if (isRootRoute || !isKnownPath) {
-        // Redirect to home if:
-        // 1. At root path (localhost:8081)
-        // 2. At unknown path
-        router.replace('/(tabs)/home');
-      }
-    }
-  }, [isLoaded, isSignedIn, segments]);
+    };
+    init();
+  }, []);
 
-  if (!isLoaded) return null;
+  if (!isLoaded) {
+    return null;
+  }
 
   return (
-    <Stack>
-      <Stack.Screen
-        name="(modals)/login"
-        options={{
-          presentation: 'modal',
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen 
-        name="(tabs)" 
-        options={{ 
-          headerShown: true,
-          header: () => <TopBanner />,
-        }} 
-      />
-    </Stack>
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="note/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="note/new" options={{ headerShown: false }} />
+        <Stack.Screen name="(modals)/login" options={{ headerShown: false }} />
+      </Stack>
+    </ThemeProvider>
   );
 }

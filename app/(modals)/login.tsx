@@ -3,6 +3,9 @@ import { useRouter } from 'expo-router';
 import { View, StyleSheet, TextInput, Text, TouchableOpacity, Image, Alert } from 'react-native';
 import { useWarmUpBrowser } from '@/hooks/useWarmUpBrowser';
 import { useState } from 'react';
+import { useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { useUser } from '@clerk/clerk-expo';
 
 enum Strategy {
   Google = 'oauth_google',
@@ -14,6 +17,8 @@ const Page = () => {
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
   const { signUp, setActive: setSignUpActive } = useSignUp();
   const { signIn, setActive: setSignInActive } = useSignIn();
+  const { user } = useUser();
+  const createOrUpdateUser = useMutation(api.mutations.createOrUpdateUser);
   
   const [showSignUp, setShowSignUp] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
@@ -23,17 +28,41 @@ const Page = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const handleUserCreation = async () => {
+    if (!user) return;
+    try {
+      await createOrUpdateUser({
+        tokenIdentifier: user.id,
+        name: `${user.firstName} ${user.lastName}`.trim(),
+        email: user.emailAddresses[0].emailAddress,
+      });
+    } catch (error) {
+      console.error('Error creating user in Convex:', error);
+    }
+  };
+
   const onSelectAuth = async () => {
     try {
-      const { createdSessionId, setActive } = await startOAuthFlow();
+      setLoading(true);
+      const { createdSessionId, signIn, signUp } = await startOAuthFlow();
       
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
+      if (createdSessionId) {
+        // If we have a session, activate it
+        if (signUp && setSignUpActive) {
+          await setSignUpActive({ session: createdSessionId });
+        } else if (signIn && setSignInActive) {
+          await setSignInActive({ session: createdSessionId });
+        }
+        await handleUserCreation();
         router.replace('/(tabs)/home');
+      } else {
+        Alert.alert('Error', 'Failed to complete authentication');
       }
     } catch (err) {
       console.error('OAuth error:', err);
       Alert.alert('Error', 'Failed to sign in with Google');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -62,6 +91,7 @@ const Page = () => {
 
       if (signUp.status === 'complete') {
         await setSignUpActive({ session: signUp.createdSessionId });
+        await handleUserCreation();
         router.replace('/(tabs)/home');
       } else {
         Alert.alert(
@@ -99,6 +129,7 @@ const Page = () => {
 
       if (signInAttempt.status === "complete") {
         await setSignInActive({ session: signInAttempt.createdSessionId });
+        await handleUserCreation();
         router.replace('/(tabs)/home');
       } else {
         Alert.alert('Error', 'Unable to complete sign in');
