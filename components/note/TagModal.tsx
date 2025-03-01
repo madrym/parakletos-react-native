@@ -10,14 +10,14 @@ interface TagModalProps {
     onKeyPress: (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => void;
 }
 
-export const TagModal: React.FC<TagModalProps> = ({
+export const TagModal = ({
     isVisible,
     onClose,
     onAdd,
     value,
     onChangeText,
     onKeyPress,
-}) => (
+}: TagModalProps) => (
     <Modal
         visible={isVisible}
         transparent

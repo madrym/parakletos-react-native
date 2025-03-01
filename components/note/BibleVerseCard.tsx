@@ -11,14 +11,14 @@ interface BibleVerseCardProps {
     isExpanded: boolean;
 }
 
-export const BibleVerseCard: React.FC<BibleVerseCardProps> = ({ 
+export const BibleVerseCard = ({ 
     reference, 
     verses, 
     onEdit, 
     onDelete, 
     onToggle,
     isExpanded 
-}) => {
+}: BibleVerseCardProps) => {
     return (
         <Card style={styles.card}>
             <TouchableOpacity onPress={onToggle}>

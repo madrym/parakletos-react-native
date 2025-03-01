@@ -6,7 +6,7 @@ interface MarkdownHelpPanelProps {
     onClose: () => void;
 }
 
-export const MarkdownHelpPanel: React.FC<MarkdownHelpPanelProps> = ({ isVisible, onClose }) => (
+export const MarkdownHelpPanel = ({ isVisible, onClose }: MarkdownHelpPanelProps) => (
     <Modal
         visible={isVisible}
         transparent

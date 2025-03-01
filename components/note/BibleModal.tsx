@@ -11,13 +11,13 @@ interface BibleModalProps {
     onChangeText: (text: string) => void;
 }
 
-export const BibleModal: React.FC<BibleModalProps> = ({
+export const BibleModal = ({
     isVisible,
     onClose,
     onInsert,
     value,
     onChangeText,
-}) => {
+}: BibleModalProps) => {
     const [isValidating, setIsValidating] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [preview, setPreview] = useState<{ reference: string; text: string } | null>(null);
