@@ -22,6 +22,7 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import ExampleTheme from "./ExampleTheme";
 import ToolbarPlugin from "./plugins/ToolbarPlugin";
 import BibleVersePlugin from "./plugins/BibleVersePlugin";
+import { BibleReferenceSuggestionPlugin } from "./plugins/BibleReferenceSuggestionPlugin";
 import { BibleVerseNode } from "./nodes/BibleVerseNode";
 import { $getRoot, EditorState, LexicalEditor as LexicalEditorType, LexicalNode, $createParagraphNode, $createTextNode } from "lexical";
 
@@ -41,6 +42,68 @@ const nodes = [
   BibleVerseNode
 ];
 
+// Create a custom focus plugin that maintains focus when initializing the editor
+function CustomAutoFocusPlugin() {
+  const [editor] = useLexicalComposerContext();
+  // Extend the editor type to include our custom property
+  interface ExtendedEditor extends LexicalEditorType {
+    _wasEditorFocused?: boolean;
+  }
+  const editorRef = useRef<ExtendedEditor | null>(null);
+  
+  // Only set the ref once when the editor is initially mounted
+  useEffect(() => {
+    if (!editorRef.current) {
+      editorRef.current = editor as ExtendedEditor;
+    }
+  }, [editor]);
+  
+  // Handle focus management
+  useEffect(() => {
+    // Focus the editor on initial load
+    setTimeout(() => {
+      // Use our persisted reference to the editor
+      if (editorRef.current) {
+        editorRef.current.focus();
+      }
+    }, 100);
+    
+    // Store current active element before editor updates
+    const handleBeforeInput = () => {
+      // This tracks if we were focused before an update
+      if (editorRef.current) {
+        editorRef.current._wasEditorFocused = document.activeElement === 
+          document.querySelector('[data-testid="editor-input"]');
+      }
+    };
+    
+    // Restore focus after editor updates
+    const handleUpdate = () => {
+      setTimeout(() => {
+        // If editor was focused before the update, refocus it
+        if (editorRef.current && editorRef.current._wasEditorFocused) {
+          editorRef.current.focus();
+          // Clear the flag
+          editorRef.current._wasEditorFocused = false;
+        }
+      }, 0);
+    };
+    
+    // Listen for beforeinput events
+    document.addEventListener('beforeinput', handleBeforeInput);
+    
+    // Register update listener
+    const removeUpdateListener = editor.registerUpdateListener(handleUpdate);
+    
+    return () => {
+      document.removeEventListener('beforeinput', handleBeforeInput);
+      removeUpdateListener();
+    };
+  }, [editor]);
+  
+  return null;
+}
+
 // This plugin handles initializing the editor with saved state
 function InitialStatePlugin({ initialEditorState }: { initialEditorState?: string }) {
   const [editor] = useLexicalComposerContext();
@@ -56,6 +119,10 @@ function InitialStatePlugin({ initialEditorState }: { initialEditorState?: strin
       
       // Only proceed if we have a valid state with a root node
       if (parsedState && parsedState.root) {
+        // Track focus state before update
+        const hasFocus = document.activeElement === 
+          document.querySelector('[data-testid="editor-input"]');
+        
         // First, clear the editor in a separate update
         editor.update(() => {
           // Clear the editor first to avoid merging with default content
@@ -75,6 +142,11 @@ function InitialStatePlugin({ initialEditorState }: { initialEditorState?: strin
             const editorState = editor.parseEditorState(initialEditorState);
             editor.setEditorState(editorState);
             console.log('InitialStatePlugin: Successfully loaded saved state');
+            
+            // Restore focus if it was active before
+            if (hasFocus) {
+              setTimeout(() => editor.focus(), 0);
+            }
           } catch (error) {
             console.error('Error setting editor state:', error);
           }
@@ -227,8 +299,9 @@ function Editor({
           <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
           <ListPlugin />
           <BibleVersePlugin />
+          <BibleReferenceSuggestionPlugin />
           <HistoryPlugin />
-          <AutoFocusPlugin />
+          <CustomAutoFocusPlugin />
           <EditorStatePlugin />
           {initialEditorState && <InitialStatePlugin initialEditorState={initialEditorState} />}
         </div>

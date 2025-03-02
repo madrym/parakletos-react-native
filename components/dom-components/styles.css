@@ -388,18 +388,36 @@ pre::-webkit-scrollbar-thumb {
 
 /* Bible Verse Component Styles */
 .bible-verse-container {
-  margin: 1rem 0;
-  padding: 1rem;
-  background-color: #f8f9fa;
-  border-radius: 4px;
-  border-left: 4px solid #0B4619;
+  border: 1px solid rgba(11, 70, 25, 0.2);
+  border-radius: 8px;
+  margin: 8px 0;
+  background-color: rgba(245, 245, 220, 0.5);
+  overflow: hidden;
 }
 
 .bible-verse-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  padding: 8px 12px;
+  background-color: rgba(11, 70, 25, 0.1);
+  border-bottom: 1px solid rgba(11, 70, 25, 0.2);
+  transition: background-color 0.2s;
+}
+
+.bible-verse-header:hover {
+  background-color: rgba(11, 70, 25, 0.15);
+}
+
+.bible-verse-reference-container {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.bible-verse-toggle-icon {
+  margin-right: 8px;
+  opacity: 0.7;
 }
 
 .bible-verse-reference {
@@ -408,28 +426,42 @@ pre::-webkit-scrollbar-thumb {
 }
 
 .bible-verse-translation {
-  margin-left: 0.5rem;
-  font-size: 0.8rem;
-  color: #666;
+  margin-left: 6px;
+  font-size: 0.8em;
+  opacity: 0.7;
 }
 
 .bible-verse-content {
-  font-style: italic;
+  padding: 0 12px;
+}
+
+.bible-verse-content p {
+  margin: 12px 0;
   line-height: 1.5;
+}
+
+.collapsed .bible-verse-content {
+  padding: 0;
+  margin: 0;
+  border-top: none;
 }
 
 .bible-verse-edit-button {
   background: none;
   border: none;
   cursor: pointer;
-  color: #666;
   padding: 4px;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0B4619;
+  opacity: 0.7;
 }
 
 .bible-verse-edit-button:hover {
-  background-color: #e9ecef;
-  color: #0B4619;
+  opacity: 1;
+  background-color: rgba(11, 70, 25, 0.1);
 }
 
 /* Bible Verse Editor Styles */

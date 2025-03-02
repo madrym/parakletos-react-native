@@ -35,6 +35,7 @@ export default function NotePage() {
   const [linkText, setLinkText] = useState('');
   const [contentChanged, setContentChanged] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [hasContent, setHasContent] = useState(false);
 
   // Refs to track changes
   const titleRef = useRef(title);
@@ -52,6 +53,11 @@ export default function NotePage() {
         
         console.log('Loading note content:', note.content.substring(0, 100) + '...');
         
+        // Set hasContent if the note has a title
+        if (note.title.trim()) {
+          setHasContent(true);
+        }
+        
         // Check if content is a serialized Lexical editor state (JSON)
         try {
           // Try to parse as JSON first (Lexical state)
@@ -67,10 +73,21 @@ export default function NotePage() {
             // We still need to set htmlContent for backward compatibility
             setHtmlContent('');
             htmlContentRef.current = '';
+            
+            // Check if the editor state contains actual content
+            const hasTextContent = parsedContent?.root?.children?.some((child: any) => 
+              child.children?.some((textNode: any) => textNode.text && textNode.text.trim().length > 0)
+            );
+            if (hasTextContent) {
+              setHasContent(true);
+            }
           } else {
             console.log('Content is JSON but not a valid Lexical state, treating as HTML');
             setHtmlContent(JSON.stringify(parsedContent));
             htmlContentRef.current = JSON.stringify(parsedContent);
+            if (JSON.stringify(parsedContent).trim()) {
+              setHasContent(true);
+            }
           }
         } catch (e: unknown) {
           const errorMessage = e instanceof Error ? e.message : 'Unknown error';
@@ -81,12 +98,18 @@ export default function NotePage() {
             console.log('Content is HTML');
             setHtmlContent(note.content);
             htmlContentRef.current = note.content;
+            if (note.content.replace(/<[^>]*>/g, '').trim()) {
+              setHasContent(true);
+            }
           } else {
             // Plain text content, convert to HTML
             console.log('Content is plain text');
             const htmlContent = `<p>${note.content.replace(/\n/g, '<br>')}</p>`;
             setHtmlContent(htmlContent);
             htmlContentRef.current = htmlContent;
+            if (note.content.trim()) {
+              setHasContent(true);
+            }
           }
         }
         
@@ -140,6 +163,19 @@ export default function NotePage() {
     if (initialLoadComplete) {
       console.log('NotePage: Editor state changed by user');
       setContentChanged(true);
+      
+      // Check if the editor state contains actual content
+      try {
+        const parsedState = JSON.parse(newEditorState);
+        const hasTextContent = parsedState?.root?.children?.some((child: any) => 
+          child.children?.some((textNode: any) => textNode.text && textNode.text.trim().length > 0)
+        );
+        if (hasTextContent) {
+          setHasContent(true);
+        }
+      } catch (error) {
+        console.error('Error parsing editor state:', error);
+      }
     } else {
       console.log('NotePage: Editor state initialized during load');
     }
@@ -149,10 +185,19 @@ export default function NotePage() {
   const handlePlainTextChange = React.useCallback((text: string) => {
     htmlContentRef.current = text;
     setContentChanged(true);
+    if (text.trim()) {
+      setHasContent(true);
+    }
   }, []);
 
   const handleSave = async () => {
     if (!user || !id || !contentChanged) return;
+    
+    // Only save if there's a title or content
+    if (!titleRef.current.trim() && !hasContent) {
+      console.log('Not saving empty note');
+      return;
+    }
     
     setIsSaving(true);
     try {
@@ -186,6 +231,9 @@ export default function NotePage() {
     setTitle(newTitle);
     titleRef.current = newTitle;
     setContentChanged(true);
+    if (newTitle.trim()) {
+      setHasContent(true);
+    }
   };
 
   const handleAddTag = () => {
@@ -224,12 +272,15 @@ export default function NotePage() {
   useEffect(() => {
     if (!contentChanged) return;
     
+    // Only save if we have a title or content
+    if (!titleRef.current.trim() && !hasContent) return;
+    
     const timeoutId = setTimeout(() => {
       handleSave();
     }, 2000); // Increased to 2 seconds to reduce save frequency
 
     return () => clearTimeout(timeoutId);
-  }, [contentChanged]);
+  }, [contentChanged, hasContent]);
 
   return (
     <KeyboardAvoidingView 

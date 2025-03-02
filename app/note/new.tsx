@@ -29,17 +29,23 @@ export default function NewNotePage() {
   const [newTag, setNewTag] = useState('');
   const [isFolderModalVisible, setIsFolderModalVisible] = useState(false);
   const [contentChanged, setContentChanged] = useState(false);
+  const [shouldAutoSave, setShouldAutoSave] = useState(false);
+  const [hasContent, setHasContent] = useState(false);
 
   // Refs to track changes
   const titleRef = useRef(title);
   const tagsRef = useRef(tags);
   const folderRef = useRef(selectedFolderId);
   const htmlContentRef = useRef(htmlContent);
+  const editorStateRef = useRef(editorState);
 
   // Handle editor changes
   const handleEditorChange = (html: string) => {
     htmlContentRef.current = html;
     setContentChanged(true);
+    if (html.trim()) {
+      setHasContent(true);
+    }
   };
 
   // Add effect to track htmlContent changes
@@ -47,21 +53,42 @@ export default function NewNotePage() {
     if (htmlContent) {
       htmlContentRef.current = htmlContent;
       setContentChanged(true);
+      setHasContent(true);
     }
   }, [htmlContent]);
+
+  // Update editor state ref when it changes
+  useEffect(() => {
+    if (editorState) {
+      editorStateRef.current = editorState;
+      // Check if the editor state contains actual content (not just an empty paragraph)
+      try {
+        const parsedState = JSON.parse(editorState);
+        const hasTextContent = parsedState?.root?.children?.some((child: any) => 
+          child.children?.some((textNode: any) => textNode.text && textNode.text.trim().length > 0)
+        );
+        if (hasTextContent) {
+          setHasContent(true);
+        }
+      } catch (error) {
+        console.error('Error parsing editor state:', error);
+      }
+    }
+  }, [editorState]);
 
   const handleSave = async () => {
     if (!user) return;
     
-    if (!titleRef.current.trim()) {
-      Alert.alert('Error', 'Please enter a title for your note.');
+    // Only save if there's a title or content
+    if (!titleRef.current.trim() && !hasContent) {
+      console.log('Not saving empty note');
       return;
     }
     
     setIsSaving(true);
     try {
       // If we have a serialized editor state, save that instead of HTML
-      const contentToSave = editorState || htmlContentRef.current;
+      const contentToSave = editorStateRef.current || htmlContentRef.current;
       
       const newNoteId = await createNote({
         title: titleRef.current,
@@ -71,6 +98,8 @@ export default function NewNotePage() {
         userId: user.id
       });
       
+      setContentChanged(false);
+      setShouldAutoSave(false);
       router.replace(`/note/${newNoteId}`);
     } catch (error) {
       console.error('Error saving:', error);
@@ -84,6 +113,9 @@ export default function NewNotePage() {
     setTitle(newTitle);
     titleRef.current = newTitle;
     setContentChanged(true);
+    if (newTitle.trim()) {
+      setShouldAutoSave(true);
+    }
   };
 
   const handleAddTag = () => {
@@ -94,6 +126,7 @@ export default function NewNotePage() {
       setNewTag('');
       setIsTagModalVisible(false);
       setContentChanged(true);
+      setShouldAutoSave(true);
     }
   };
 
@@ -102,6 +135,7 @@ export default function NewNotePage() {
     setTags(updatedTags);
     tagsRef.current = updatedTags;
     setContentChanged(true);
+    setShouldAutoSave(true);
   };
 
   const handleFolderSelect = (folderId: Id<"folders">) => {
@@ -109,7 +143,22 @@ export default function NewNotePage() {
     folderRef.current = folderId;
     setIsFolderModalVisible(false);
     setContentChanged(true);
+    setShouldAutoSave(true);
   };
+
+  // Auto-save handler with debounce
+  useEffect(() => {
+    if (!contentChanged || !shouldAutoSave) return;
+    
+    // Only save if we have a title or content
+    if (!titleRef.current.trim() && !hasContent) return;
+    
+    const timeoutId = setTimeout(() => {
+      handleSave();
+    }, 2000); // 2 seconds debounce to reduce save frequency
+
+    return () => clearTimeout(timeoutId);
+  }, [contentChanged, shouldAutoSave, hasContent]);
 
   return (
     <KeyboardAvoidingView 
