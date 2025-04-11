@@ -1,7 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, TextInput, StyleSheet, TouchableOpacity, Text, ScrollView, SafeAreaView, Alert, Platform, Modal, KeyboardAvoidingView } from 'react-native';
+import { 
+  View, 
+  TextInput, 
+  StyleSheet, 
+  TouchableOpacity, 
+  Text, 
+  ScrollView, 
+  SafeAreaView, 
+  Alert, 
+  Platform, 
+  Modal, 
+  KeyboardAvoidingView,
+  StatusBar
+} from 'react-native';
 import { router, Stack } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
@@ -161,176 +174,236 @@ export default function NewNotePage() {
   }, [contentChanged, shouldAutoSave, hasContent]);
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={{ marginLeft: 16, padding: 8 }} 
-              activeOpacity={0.7}
-            >
-              <Ionicons name="arrow-back" size={24} color="#F5F5DC" />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 16 }}>
-              <TouchableOpacity 
-                style={{ marginRight: 16 }} 
-                onPress={handleSave}
-                disabled={isSaving}
-              >
-                <Text style={styles.saveButton}>Save</Text>
-              </TouchableOpacity>
-              {isSaving && (
-                <Text style={styles.savingIndicator}>Saving...</Text>
-              )}
-            </View>
-          ),
-          headerTitle: 'New Note',
-          headerTitleStyle: {
-            color: '#F5F5DC',
-          },
-          headerStyle: {
-            backgroundColor: '#0B4619',
-          },
-          headerShadowVisible: false,
-        }}
-      />
-
-      <SafeAreaView style={styles.content}>
-        <View style={styles.headerSection}>
-          <TextInput
-            style={styles.titleInput}
-            value={title}
-            onChangeText={handleTitleChange}
-            placeholder="Note Title"
-            placeholderTextColor="#666"
-          />
-          
-          <View style={styles.tagsContainer}>
-            <Text style={styles.sectionLabel}>Tags:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
-              {tags.map(tag => (
-                <TouchableOpacity
-                  key={tag.id}
-                  style={styles.tag}
-                  onPress={() => handleRemoveTag(tag.id)}
-                >
-                  <Text style={styles.tagText}>{tag.name}</Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={styles.addTagButton}
-                onPress={() => setIsTagModalVisible(true)}
-              >
-                <Ionicons name="add" size={20} color="#0B4619" />
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-
-          <TouchableOpacity
-            style={styles.folderButton}
-            onPress={() => setIsFolderModalVisible(true)}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" />
+      <KeyboardAvoidingView 
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      >
+        <View style={styles.headerContainer}>
+          <TouchableOpacity 
+            onPress={() => router.back()}
+            style={styles.backButton} 
+            activeOpacity={0.7}
           >
-            <Ionicons name="folder-outline" size={20} color="#0B4619" />
-            <Text style={styles.folderButtonText}>
-              {getFolders?.find(f => f._id === selectedFolderId)?.name || 'Select Folder'}
-            </Text>
+            <Ionicons name="chevron-back" size={24} color="#F5F5DC" />
+            <Text style={styles.backText}>Home</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.headerTitle}>New Note</Text>
+
+          <TouchableOpacity 
+            style={styles.saveButton}
+            onPress={handleSave}
+            disabled={isSaving}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save'}</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.divider} />
-
-        <View style={styles.editorContainer}>
-          <LexicalEditor
-            setPlainText={setHtmlContent}
-            setEditorState={setEditorState}
-            initialEditorState={editorState || undefined}
-          />
-        </View>
-      </SafeAreaView>
-
-      {/* Tag Modal */}
-      <Modal
-        visible={isTagModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsTagModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Tag</Text>
+        <View style={styles.content}>
+          <View style={styles.headerSection}>
             <TextInput
-              style={styles.modalInput}
-              value={newTag}
-              onChangeText={setNewTag}
-              placeholder="Enter tag name"
-              onSubmitEditing={handleAddTag}
+              style={styles.titleInput}
+              value={title}
+              onChangeText={handleTitleChange}
+              placeholder="Note Title"
+              placeholderTextColor="#999"
+              selectionColor="#0B4619"
             />
-            <View style={styles.modalButtons}>
+            
+            <View style={styles.optionsRow}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setIsTagModalVisible(false)}
+                style={styles.folderButton}
+                onPress={() => setIsFolderModalVisible(true)}
+                activeOpacity={0.7}
               >
-                <Text style={styles.modalButtonText}>Cancel</Text>
+                <View style={styles.folderIconContainer}>
+                  <Ionicons name="folder-outline" size={20} color="#0B4619" />
+                </View>
+                <Text style={styles.folderButtonText}>
+                  {getFolders?.find(f => f._id === selectedFolderId)?.name || 'Select Folder'}
+                </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={[styles.modalButton, styles.addButton]}
-                onPress={handleAddTag}
+                style={styles.tagButton}
+                onPress={() => setIsTagModalVisible(true)}
+                activeOpacity={0.7}
               >
-                <Text style={styles.modalButtonText}>Add</Text>
+                <View style={styles.tagIconContainer}>
+                  <Ionicons name="pricetag-outline" size={20} color="#0B4619" />
+                </View>
+                <Text style={styles.tagButtonText}>
+                  Add Tags
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
+            {tags.length > 0 && (
+              <View style={styles.tagsContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
+                  {tags.map(tag => (
+                    <TouchableOpacity
+                      key={tag.id}
+                      style={styles.tag}
+                      onPress={() => handleRemoveTag(tag.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.tagText}>{tag.name}</Text>
+                      <View style={styles.removeTagButton}>
+                        <Ionicons name="close" size={14} color="#0B4619" />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.editorContainer}>
+            <LexicalEditor
+              setPlainText={setHtmlContent}
+              setEditorState={setEditorState}
+              initialEditorState={editorState || undefined}
+            />
+          </View>
+        </View>
+
+        {/* Tag Modal */}
+        <Modal
+          visible={isTagModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsTagModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Add Tag</Text>
+              <View style={styles.modalInputContainer}>
+                <Ionicons name="pricetag-outline" size={20} color="#999" style={styles.modalInputIcon} />
+                <TextInput
+                  style={styles.modalInput}
+                  value={newTag}
+                  onChangeText={setNewTag}
+                  placeholder="Enter tag name"
+                  placeholderTextColor="#999"
+                  onSubmitEditing={handleAddTag}
+                  autoFocus
+                  selectionColor="#0B4619"
+                />
+              </View>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => setIsTagModalVisible(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.addButton]}
+                  onPress={handleAddTag}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.addButtonText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Folder Modal */}
+        <Modal
+          visible={isFolderModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsFolderModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Select Folder</Text>
+              <ScrollView style={styles.folderList}>
+                {getFolders?.map(folder => (
+                  <TouchableOpacity
+                    key={folder._id}
+                    style={styles.folderItem}
+                    onPress={() => handleFolderSelect(folder._id as Id<"folders">)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.folderItemIconContainer}>
+                      <Ionicons name="folder" size={20} color="#0B4619" />
+                    </View>
+                    <Text style={styles.folderItemText}>{folder.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.closeButton]}
+                onPress={() => setIsFolderModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.closeButtonText}>Close</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
-
-      {/* Folder Modal */}
-      <Modal
-        visible={isFolderModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsFolderModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Folder</Text>
-            <ScrollView>
-              {getFolders?.map(folder => (
-                <TouchableOpacity
-                  key={folder._id}
-                  style={styles.folderItem}
-                  onPress={() => handleFolderSelect(folder._id as Id<"folders">)}
-                >
-                  <Text style={styles.folderItemText}>{folder.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
-              onPress={() => setIsFolderModalVisible(false)}
-            >
-              <Text style={styles.modalButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0B4619',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F5F5DC',
   },
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0B4619',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 4,
+  },
+  backText: {
+    color: '#F5F5DC',
+    fontSize: 16,
+    marginLeft: 4,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#F5F5DC',
+    letterSpacing: 0.3,
+  },
+  saveButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  saveButtonText: {
+    color: '#F5F5DC',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   content: {
     flex: 1,
+    backgroundColor: '#F5F5DC',
   },
   headerSection: {
     padding: 16,
@@ -341,60 +414,103 @@ const styles = StyleSheet.create({
     color: '#0B4619',
     marginBottom: 16,
     padding: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(11, 70, 25, 0.1)',
   },
-  sectionLabel: {
-    fontSize: 16,
-    color: '#0B4619',
-    marginRight: 8,
+  optionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  tagsContainer: {
+  folderButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flex: 1,
+    marginRight: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  folderIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(11, 70, 25, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  folderButtonText: {
+    color: '#0B4619',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  tagButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flex: 1,
+    marginLeft: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  tagIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(11, 70, 25, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  tagButtonText: {
+    color: '#0B4619',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  tagsContainer: {
     marginBottom: 16,
   },
   tagScroll: {
     flex: 1,
   },
   tag: {
-    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(11, 70, 25, 0.08)',
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 6,
     marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#0B4619',
   },
   tagText: {
     color: '#0B4619',
     fontSize: 14,
+    marginRight: 6,
   },
-  addTagButton: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    width: 32,
-    height: 32,
+  removeTagButton: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#0B4619',
-  },
-  folderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    padding: 8,
-    borderWidth: 1,
-    borderColor: '#0B4619',
-  },
-  folderButtonText: {
-    color: '#0B4619',
-    marginLeft: 8,
-    fontSize: 16,
   },
   divider: {
     height: 1,
-    backgroundColor: '#0B4619',
+    backgroundColor: 'rgba(11, 70, 25, 0.1)',
     marginHorizontal: 16,
     marginBottom: 16,
   },
@@ -403,16 +519,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
-  lexicalEditor: {
-    flex: 1,
-    minHeight: 400,
-  },
-  saveButton: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#F5F5DC',
-  },
-  modalContainer: {
+  modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
@@ -422,55 +529,104 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5DC',
     borderRadius: 16,
     padding: 24,
-    width: '80%',
+    width: '85%',
     maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#0B4619',
-    marginBottom: 16,
+    marginBottom: 20,
+    letterSpacing: 0.3,
+  },
+  modalInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 50,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    marginBottom: 20,
+  },
+  modalInputIcon: {
+    marginRight: 10,
   },
   modalInput: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#0B4619',
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+    height: '100%',
   },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: 12,
   },
   modalButton: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginLeft: 8,
+    paddingVertical: 10,
+    borderRadius: 12,
+    minWidth: 90,
+    alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#cccccc',
+    backgroundColor: '#EEEEEE',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
   },
   addButton: {
     backgroundColor: '#0B4619',
   },
-  modalButtonText: {
-    color: '#ffffff',
+  addButtonText: {
+    color: '#F5F5DC',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+  },
+  closeButton: {
+    backgroundColor: '#0B4619',
+    marginTop: 16,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  closeButtonText: {
+    color: '#F5F5DC',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  folderList: {
+    maxHeight: 300,
+    marginBottom: 16,
   },
   folderItem: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#cccccc',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  folderItemIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(11, 70, 25, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   folderItemText: {
     fontSize: 16,
     color: '#0B4619',
+    fontWeight: '500',
   },
-  savingIndicator: {
-    color: '#F5F5DC',
-    fontSize: 14,
-  }
 }); 

@@ -1,11 +1,24 @@
 import { useOAuth, useSignUp, useSignIn } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
-import { View, StyleSheet, TextInput, Text, TouchableOpacity, Image, Alert } from 'react-native';
+import { 
+  View, 
+  StyleSheet, 
+  TextInput, 
+  Text, 
+  TouchableOpacity, 
+  Image, 
+  Alert, 
+  KeyboardAvoidingView, 
+  Platform,
+  SafeAreaView,
+  StatusBar 
+} from 'react-native';
 import { useWarmUpBrowser } from '@/hooks/useWarmUpBrowser';
 import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useUser } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
 
 enum Strategy {
   Google = 'oauth_google',
@@ -144,263 +157,422 @@ const Page = () => {
 
   if (showSignUp) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>parakletos</Text>
-        <Text style={styles.subtitle}>Create an account</Text>
-        
-        <TouchableOpacity 
-          style={[styles.googleButton, loading && styles.disabledButton]}
-          onPress={onSelectAuth}
-          disabled={loading}
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.keyboardView}
         >
+          <View style={styles.container}>
+            <View style={styles.formContainer}>
+              <Text style={styles.title}>parakletos</Text>
+              <Text style={styles.subtitle}>Create an account</Text>
+              
+              <TouchableOpacity 
+                style={[styles.googleButton, loading && styles.disabledButton]}
+                onPress={onSelectAuth}
+                disabled={loading}
+              >
+                <Image 
+                  source={require('../../assets/images/google-icon.png')} 
+                  style={styles.googleIcon}
+                />
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </TouchableOpacity>
+
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.orText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <View style={styles.inputRow}>
+                  <View style={[styles.inputContainer, styles.halfWidth]}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="First Name"
+                      value={firstName}
+                      onChangeText={setFirstName}
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+                  <View style={[styles.inputContainer, styles.halfWidth]}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Last Name"
+                      value={lastName}
+                      onChangeText={setLastName}
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+                </View>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="mail-outline" size={20} color="#999" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email address"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    placeholderTextColor="#999"
+                  />
+                </View>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#999" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Password"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                    placeholderTextColor="#999"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.actionButton, loading && styles.disabledButton]}
+                onPress={handleEmailSignUp}
+                disabled={loading}
+              >
+                <Text style={styles.actionButtonText}>
+                  {loading ? 'Creating Account...' : 'Create Account'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowSignUp(false);
+                  setShowLogin(true);
+                }}
+                style={styles.switchActionContainer}
+              >
+                <Text style={styles.switchActionText}>
+                  Already have an account? <Text style={styles.switchActionLink}>Sign In</Text>
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+        <View style={styles.boatContainer}>
           <Image 
-            source={require('../../assets/images/google-icon.png')} 
-            style={styles.googleIcon}
+            source={require('../../assets/images/boat.png')} 
+            style={styles.boatImage}
+            resizeMode="contain"
           />
-          <Text style={styles.googleButtonText}>Continue with Google</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.orText}>or</Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="First Name"
-          value={firstName}
-          onChangeText={setFirstName}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Last Name"
-          value={lastName}
-          onChangeText={setLastName}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your email address"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Create a password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-
-        <TouchableOpacity 
-          style={[styles.createAccountButton, loading && styles.disabledButton]}
-          onPress={handleEmailSignUp}
-          disabled={loading}
-        >
-          <Text style={styles.createAccountButtonText}>
-            {loading ? 'Creating Account...' : 'Create Account'}
-          </Text>
-        </TouchableOpacity>
-
-        <Image 
-          source={require('../../assets/images/boat.png')} 
-          style={styles.boatImage}
-          resizeMode="contain"
-        />
-      </View>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (showLogin) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>parakletos</Text>
-        <Text style={styles.subtitle}>Welcome back</Text>
-        
-        <TouchableOpacity 
-          style={[styles.googleButton, loading && styles.disabledButton]}
-          onPress={onSelectAuth}
-          disabled={loading}
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.keyboardView}
         >
+          <View style={styles.container}>
+            <View style={styles.formContainer}>
+              <Text style={styles.title}>parakletos</Text>
+              <Text style={styles.subtitle}>Welcome back</Text>
+              
+              <TouchableOpacity 
+                style={[styles.googleButton, loading && styles.disabledButton]}
+                onPress={onSelectAuth}
+                disabled={loading}
+              >
+                <Image 
+                  source={require('../../assets/images/google-icon.png')} 
+                  style={styles.googleIcon}
+                />
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </TouchableOpacity>
+
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.orText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="mail-outline" size={20} color="#999" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email address"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    editable={!loading}
+                    placeholderTextColor="#999"
+                  />
+                </View>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#999" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Password"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                    editable={!loading}
+                    placeholderTextColor="#999"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.actionButton, loading && styles.disabledButton]}
+                onPress={handleEmailSignIn}
+                disabled={loading}
+              >
+                <Text style={styles.actionButtonText}>
+                  {loading ? 'Signing In...' : 'Sign In'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowLogin(false);
+                  setShowSignUp(true);
+                }}
+                style={styles.switchActionContainer}
+              >
+                <Text style={styles.switchActionText}>
+                  Don't have an account? <Text style={styles.switchActionLink}>Sign Up</Text>
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+        <View style={styles.boatContainer}>
           <Image 
-            source={require('../../assets/images/google-icon.png')} 
-            style={styles.googleIcon}
+            source={require('../../assets/images/boat.png')} 
+            style={styles.boatImage}
+            resizeMode="contain"
           />
-          <Text style={styles.googleButtonText}>Continue with Google</Text>
-        </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
-        <Text style={styles.orText}>or</Text>
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
+      <View style={styles.container}>
+        <View style={styles.contentContainer}>
+          <Text style={styles.title}>parakletos</Text>
+          <Text style={styles.subtitle}>Your personal helper for sermon{'\n'}and bible study notes taking</Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your email address"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          editable={!loading}
-        />
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={styles.actionButton} 
+              onPress={() => setShowLogin(true)}
+            >
+              <Text style={styles.actionButtonText}>Sign In</Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.loginButton, loading && styles.disabledButton]}
-          onPress={handleEmailSignIn}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>
-            {loading ? 'Signing In...' : 'Continue'}
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={styles.signUpText}>
-          Didn't have an account? 
-          <Text 
-            style={styles.signUpLink}
-            onPress={() => {
-              setShowLogin(false);
-              setShowSignUp(true);
-            }}
-          > Sign Up</Text>
-        </Text>
-
+            <TouchableOpacity 
+              style={styles.secondaryButton}
+              onPress={() => setShowSignUp(true)}
+            >
+              <Text style={styles.secondaryButtonText}>Create Account</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+      <View style={styles.boatContainer}>
         <Image 
           source={require('../../assets/images/boat.png')} 
           style={styles.boatImage}
           resizeMode="contain"
         />
       </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>parakletos</Text>
-      <Text style={styles.subtitle}>Your personal helper for sermon{'\n'}and bible study notes taking</Text>
-
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity 
-          style={styles.loginButton} 
-          onPress={() => setShowLogin(true)}
-        >
-          <Text style={styles.buttonText}>Login</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.signUpButton}
-          onPress={() => setShowSignUp(true)}
-        >
-          <Text style={styles.buttonText}>Sign up</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Image 
-        source={require('../../assets/images/boat.png')} 
-        style={styles.boatImage}
-        resizeMode="contain"
-      />
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F5F5DC',
+  },
+  keyboardView: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#F5F5DC',
-    padding: 20,
     alignItems: 'center',
   },
+  contentContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+  },
+  formContainer: {
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+  },
   title: {
-    fontSize: 36,
+    fontSize: 34,
     color: '#0B4619',
     fontWeight: 'bold',
-    marginTop: 60,
-    marginBottom: 10,
+    marginBottom: 12,
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 18,
     color: '#0B4619',
     textAlign: 'center',
     marginBottom: 40,
+    opacity: 0.8,
+    lineHeight: 24,
   },
   buttonContainer: {
     width: '100%',
-    gap: 20,
-  },
-  loginButton: {
-    backgroundColor: '#0B4619',
-    padding: 15,
-    borderRadius: 25,
-    width: '100%',
+    maxWidth: 300,
+    gap: 16,
     alignItems: 'center',
   },
-  signUpButton: {
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
     backgroundColor: '#0B4619',
-    padding: 15,
-    borderRadius: 25,
+    opacity: 0.2,
+  },
+  actionButton: {
+    backgroundColor: '#0B4619',
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  buttonText: {
+  actionButtonText: {
     color: '#F5F5DC',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  boatImage: {
-    width: '100%',
-    height: 200,
-    position: 'absolute',
-    bottom: 0,
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    width: '100%',
-    padding: 15,
-    borderRadius: 25,
-    marginBottom: 15,
     fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  secondaryButton: {
+    backgroundColor: 'transparent',
+    paddingVertical: 16,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0B4619',
+  },
+  secondaryButtonText: {
     color: '#0B4619',
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
   googleButton: {
     backgroundColor: '#0B4619',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 15,
-    borderRadius: 25,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
-    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   googleButtonText: {
     color: '#F5F5DC',
     fontSize: 16,
-    marginLeft: 10,
+    fontWeight: '500',
+    marginLeft: 12,
   },
   googleIcon: {
-    width: 24,
-    height: 24,
+    width: 20,
+    height: 20,
   },
   orText: {
     color: '#0B4619',
-    fontSize: 16,
-    marginVertical: 20,
+    fontSize: 14,
+    marginHorizontal: 12,
+    opacity: 0.7,
   },
-  createAccountButton: {
-    backgroundColor: '#666666',
-    padding: 15,
-    borderRadius: 25,
+  inputGroup: {
     width: '100%',
+    gap: 16,
+    marginBottom: 24,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  inputContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 56,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
   },
-  createAccountButtonText: {
-    color: '#F5F5DC',
+  halfWidth: {
+    flex: 1,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
     fontSize: 16,
-    fontWeight: '600',
+    color: '#333',
+    height: '100%',
   },
-  signUpText: {
-    color: '#0B4619',
-    marginTop: 20,
+  switchActionContainer: {
+    marginTop: 24,
   },
-  signUpLink: {
+  switchActionText: {
+    fontSize: 15,
+    color: '#666',
+  },
+  switchActionLink: {
     color: '#0B4619',
     fontWeight: 'bold',
+  },
+  boatContainer: {
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    height: '30%',
+    justifyContent: 'flex-end',
+    zIndex: -1,
+  },
+  boatImage: {
+    width: '100%',
+    height: '100%',
   },
   disabledButton: {
     opacity: 0.6,

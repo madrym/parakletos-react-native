@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput } from 'react-native';
+import { 
+    View, 
+    Text, 
+    StyleSheet, 
+    TouchableOpacity, 
+    FlatList, 
+    TextInput, 
+    Image, 
+    Platform,
+    StatusBar,
+    SafeAreaView
+} from 'react-native';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useUser } from '@clerk/clerk-expo';
@@ -69,288 +80,433 @@ export default function HomePage() {
 
     const handleSelectFolder = (id: Id<"folders">) => {
         setSelectedFolderId(id);
-        // TODO: Navigate to folder view
+        // For now, just show all notes since we don't have a dedicated folder view
+        router.push('/my-notes');
     };
 
-    const renderFolder = ({ item }: { item: Folder }) => {
-        const folderNotes = notes?.filter(note => note.folderId === item._id) || [];
+    // Navigate back to home (can be used from other screens)
+    const navigateToHome = () => {
+        router.push('/');
+    };
+
+    // Navigate to profile
+    const navigateToProfile = () => {
+        router.push('/(tabs)/profile');
+    };
+
+    const renderFolderItem = ({ item }: { item: Folder }) => {
+        let iconName = "book";
+        let iconComponent = FontAwesome5;
+        
+        if (item.name.toLowerCase().includes('sermon')) {
+            iconName = "home";
+            iconComponent = Ionicons;
+        } else if (item.name.toLowerCase().includes('devotion')) {
+            iconName = "book-open";
+            iconComponent = FontAwesome5;
+        } else if (item.name.toLowerCase().includes('bible')) {
+            iconName = "glasses";
+            iconComponent = Ionicons;
+        }
+        
+        const Icon = iconComponent;
         
         return (
-            <View style={styles.folderContainer}>
-                <TouchableOpacity 
-                    style={styles.folderHeader}
-                    onPress={() => {
-                        // TODO: Navigate to folder view
-                    }}
-                >
-                    <View style={styles.folderTitleContainer}>
-                        <Text style={styles.folderEmoji}>{item.emoji}</Text>
-                        <Text style={styles.folderName}>{item.name}</Text>
-                    </View>
-                    <Text style={styles.noteCount}>{folderNotes.length} notes</Text>
-                </TouchableOpacity>
-                
-                {folderNotes.length > 0 && (
-                    <View style={styles.notesList}>
-                        {folderNotes.slice(0, 3).map(note => (
-                            <TouchableOpacity
-                                key={note._id}
-                                style={styles.noteItem}
-                                onPress={() => router.push(`/note/${note._id}`)}
-                            >
-                                <Text style={styles.noteTitle} numberOfLines={1}>
-                                    {note.title || 'Untitled Note'}
-                                </Text>
-                                <Text style={styles.noteDate}>
-                                    {new Date(note.updatedAt).toLocaleDateString()}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                        {folderNotes.length > 3 && (
-                            <TouchableOpacity style={styles.viewMoreButton}>
-                                <Text style={styles.viewMoreText}>
-                                    View {folderNotes.length - 3} more notes
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                )}
-            </View>
+            <TouchableOpacity 
+                style={styles.folderCard}
+                onPress={() => handleSelectFolder(item._id)}
+            >
+                <View style={styles.folderIconContainer}>
+                    <Icon name={iconName} size={24} color="#0B4619" />
+                </View>
+                <Text style={styles.folderTitle}>{item.name}</Text>
+                <Text style={styles.folderSubtitle}>Folder</Text>
+            </TouchableOpacity>
         );
     };
 
-    const renderUnorganizedNotes = () => {
-        const unorganizedNotes = notes?.filter(note => !note.folderId) || [];
-        
-        if (unorganizedNotes.length === 0) return null;
-
-        return (
-            <View style={styles.folderContainer}>
-                <View style={styles.folderHeader}>
-                    <View style={styles.folderTitleContainer}>
-                        <Text style={styles.folderEmoji}>📝</Text>
-                        <Text style={styles.folderName}>Unorganized Notes</Text>
-                    </View>
-                    <Text style={styles.noteCount}>{unorganizedNotes.length} notes</Text>
-                </View>
-                
-                <View style={styles.notesList}>
-                    {unorganizedNotes.slice(0, 3).map(note => (
-                        <TouchableOpacity
-                            key={note._id}
-                            style={styles.noteItem}
-                            onPress={() => router.push(`/note/${note._id}`)}
-                        >
-                            <Text style={styles.noteTitle} numberOfLines={1}>
-                                {note.title || 'Untitled Note'}
-                            </Text>
-                            <Text style={styles.noteDate}>
-                                {new Date(note.updatedAt).toLocaleDateString()}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                    {unorganizedNotes.length > 3 && (
-                        <TouchableOpacity style={styles.viewMoreButton}>
-                            <Text style={styles.viewMoreText}>
-                                View {unorganizedNotes.length - 3} more notes
-                            </Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            </View>
-        );
+    // Add predefined folders if they don't exist yet
+    const ensurePredefinedFolders = async () => {
+        if (!folders || folders.length === 0) {
+            if (!user) return;
+            
+            const predefinedFolders = [
+                { name: "Sermons", emoji: "🏠" },
+                { name: "Devotions", emoji: "📖" },
+                { name: "Bible study", emoji: "👓" }
+            ];
+            
+            for (const folder of predefinedFolders) {
+                await createFolder({
+                    name: folder.name,
+                    emoji: folder.emoji,
+                    userId: user.id
+                });
+            }
+        }
     };
+
+    // Ensure predefined folders exist
+    React.useEffect(() => {
+        if (folders !== undefined && user) {
+            ensurePredefinedFolders();
+        }
+    }, [folders, user]);
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search notes..."
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholderTextColor="#666"
+        <SafeAreaView style={styles.safeArea}>
+            <StatusBar barStyle="dark-content" />
+            <View style={styles.container}>
+                {/* Header */}
+                <View style={styles.headerContainer}>
+                    <TouchableOpacity onPress={navigateToHome} style={styles.logoContainer}>
+                        <Text style={styles.appTitle}>parakletos</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={navigateToProfile} style={styles.profileButton}>
+                        {user?.imageUrl ? (
+                            <Image source={{ uri: user.imageUrl }} style={styles.profileImage} />
+                        ) : (
+                            <View style={styles.profilePlaceholder}>
+                                <Ionicons name="person" size={20} color="#FFF" />
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                </View>
+
+                {/* Greeting */}
+                <View style={styles.greetingContainer}>
+                    <Text style={styles.greeting}>Hi {user?.firstName || 'there'}</Text>
+                </View>
+
+                {/* Search */}
+                <View style={styles.searchContainer}>
+                    <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search notes"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        placeholderTextColor="#999"
+                    />
+                </View>
+
+                {/* Add New Note Button */}
+                <TouchableOpacity 
+                    style={styles.addNoteButton}
+                    onPress={() => router.push('/note/new')}
+                    activeOpacity={0.8}
+                >
+                    <View style={styles.addNoteContent}>
+                        <View style={styles.addNoteTextContainer}>
+                            <Text style={styles.addNoteText}>Add new</Text>
+                            <Text style={styles.addNoteText}>note</Text>
+                        </View>
+                        <View style={styles.bibleImageContainer}>
+                            <FontAwesome5 name="bible" size={42} color="#F5F5DC" />
+                        </View>
+                    </View>
+                </TouchableOpacity>
+
+                {/* Mobile Friendly Editor Button */}
+                <TouchableOpacity 
+                    style={[styles.addNoteButton, { marginTop: 16, backgroundColor: '#272727' }]}
+                    onPress={() => {
+                        console.log('Navigating to mobile friendly editor (DEBUG VERSION)');
+                        // Force clear any caches by using a timestamp
+                        router.push('/mobile-friendly-editor');
+                    }}
+                    activeOpacity={0.8}
+                >
+                    <View style={styles.addNoteContent}>
+                        <View style={styles.addNoteTextContainer}>
+                            <Text style={[styles.addNoteTitle, { color: '#F5F5DC' }]}>Try NEW Mobile Friendly Editor (Debug)</Text>
+                            <Text style={[styles.addNoteSubtitle, { color: '#F5F5DC' }]}>
+                                Simplified version with custom toolbar
+                            </Text>
+                        </View>
+                        <View style={[styles.addNoteIconContainer, { backgroundColor: '#444' }]}>
+                            <Ionicons name="bug" size={24} color="#F5F5DC" />
+                        </View>
+                    </View>
+                </TouchableOpacity>
+
+                {/* Section Title */}
+                <View style={styles.sectionTitleContainer}>
+                    <Text style={styles.sectionTitle}>My Folders</Text>
+                </View>
+
+                {/* Folders */}
+                <View style={styles.foldersContainer}>
+                    <FlatList
+                        data={folders || []}
+                        renderItem={renderFolderItem}
+                        keyExtractor={item => item._id}
+                        numColumns={2}
+                        contentContainerStyle={styles.folderList}
+                        showsVerticalScrollIndicator={false}
+                        ListFooterComponent={
+                            <TouchableOpacity 
+                                style={styles.addFolderCard}
+                                onPress={() => setIsFolderModalVisible(true)}
+                                activeOpacity={0.7}
+                            >
+                                <View style={styles.addIconContainer}>
+                                    <Ionicons name="add" size={24} color="#0B4619" />
+                                </View>
+                                <Text style={styles.addFolderText}>Add new</Text>
+                                <Text style={styles.addFolderText}>folder</Text>
+                            </TouchableOpacity>
+                        }
+                    />
+                </View>
+
+                <FolderModal
+                    isVisible={isFolderModalVisible}
+                    onClose={() => setIsFolderModalVisible(false)}
+                    folders={folders || []}
+                    selectedFolderId={selectedFolderId}
+                    onSelectFolder={handleSelectFolder}
+                    onCreateFolder={handleCreateFolder}
+                    onUpdateFolder={handleUpdateFolder}
+                    onDeleteFolder={handleDeleteFolder}
                 />
             </View>
-
-            <View style={styles.actionButtons}>
-                <TouchableOpacity 
-                    style={styles.newNoteButton}
-                    onPress={() => router.push('/note/new')}
-                >
-                    <Ionicons name="add-circle-outline" size={24} color="#F5F5DC" />
-                    <Text style={styles.buttonText}>New Note</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                    style={styles.newFolderButton}
-                    onPress={() => setIsFolderModalVisible(true)}
-                >
-                    <Ionicons name="folder-outline" size={24} color="#0B4619" />
-                    <Text style={styles.folderButtonText}>New Folder</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                    style={styles.allNotesButton}
-                    onPress={() => router.push('/my-notes')}
-                >
-                    <Ionicons name="list-outline" size={24} color="#0B4619" />
-                    <Text style={styles.folderButtonText}>All Notes</Text>
-                </TouchableOpacity>
-            </View>
-
-            <FlatList
-                data={folders}
-                renderItem={renderFolder}
-                keyExtractor={item => item._id}
-                ListHeaderComponent={renderUnorganizedNotes}
-                contentContainerStyle={styles.contentContainer}
-            />
-
-            <FolderModal
-                isVisible={isFolderModalVisible}
-                onClose={() => setIsFolderModalVisible(false)}
-                folders={folders || []}
-                selectedFolderId={selectedFolderId}
-                onSelectFolder={handleSelectFolder}
-                onCreateFolder={handleCreateFolder}
-                onUpdateFolder={handleUpdateFolder}
-                onDeleteFolder={handleDeleteFolder}
-            />
-        </View>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1,
+        backgroundColor: '#F5F5DC',
+    },
     container: {
         flex: 1,
         backgroundColor: '#F5F5DC',
     },
-    header: {
-        padding: 16,
+    headerContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#0B4619',
+        borderBottomColor: 'rgba(11, 70, 25, 0.1)',
+        backgroundColor: '#F5F5DC',
     },
-    searchInput: {
-        backgroundColor: '#FFFFFF',
-        padding: 12,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#0B4619',
+    logoContainer: {
+        paddingVertical: 4,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 15,
+    },
+    appTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
         color: '#0B4619',
+        letterSpacing: 0.5,
     },
-    actionButtons: {
-        flexDirection: 'row',
-        padding: 16,
-        gap: 12,
-    },
-    newNoteButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#0B4619',
-        padding: 12,
-        borderRadius: 8,
-        gap: 8,
-    },
-    newFolderButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#FFFFFF',
-        padding: 12,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#0B4619',
-        gap: 8,
-    },
-    allNotesButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#FFFFFF',
-        padding: 12,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#0B4619',
-        gap: 8,
-    },
-    buttonText: {
-        color: '#F5F5DC',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    folderButtonText: {
-        color: '#0B4619',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    contentContainer: {
-        padding: 16,
-    },
-    folderContainer: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 8,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: '#0B4619',
+    profileButton: {
+        borderRadius: 20,
         overflow: 'hidden',
     },
-    folderHeader: {
+    profileImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        borderWidth: 2,
+        borderColor: '#0B4619',
+    },
+    profilePlaceholder: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#0B4619',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    greetingContainer: {
+        marginTop: 20,
+        marginBottom: 24,
+        paddingHorizontal: 20,
+    },
+    greeting: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#0B4619',
+        letterSpacing: 0.3,
+    },
+    searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        backgroundColor: 'white',
+        borderRadius: 12,
+        paddingHorizontal: 15,
+        marginBottom: 24,
+        marginHorizontal: 20,
+        height: 50,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+        elevation: 2,
+    },
+    searchIcon: {
+        marginRight: 10,
+    },
+    searchInput: {
+        flex: 1,
+        paddingVertical: 12,
+        color: '#333',
+        fontSize: 16,
+    },
+    addNoteButton: {
+        backgroundColor: '#0B4619',
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 24,
+        marginHorizontal: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 3,
+    },
+    addNoteContent: {
+        flexDirection: 'row',
         justifyContent: 'space-between',
-        padding: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E5E5E5',
-    },
-    folderTitleContainer: {
-        flexDirection: 'row',
         alignItems: 'center',
     },
-    folderEmoji: {
-        fontSize: 24,
-        marginRight: 8,
+    addNoteTextContainer: {
+        flex: 1,
     },
-    folderName: {
+    addNoteText: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#F5F5DC',
+        lineHeight: 34,
+        letterSpacing: 0.3,
+    },
+    bibleImageContainer: {
+        marginLeft: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 12,
+        width: 56,
+        height: 56,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    sectionTitleContainer: {
+        paddingHorizontal: 20,
+        marginBottom: 16,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#0B4619',
+        letterSpacing: 0.3,
+    },
+    foldersContainer: {
+        flex: 1,
+        paddingHorizontal: 12,
+    },
+    folderList: {
+        paddingBottom: 20,
+    },
+    folderCard: {
+        flex: 1,
+        backgroundColor: 'white',
+        borderRadius: 16,
+        padding: 16,
+        margin: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: 140,
+        maxWidth: 160,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+        elevation: 2,
+    },
+    folderIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: 'rgba(11, 70, 25, 0.08)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    folderTitle: {
         fontSize: 16,
         fontWeight: '600',
         color: '#0B4619',
-    },
-    noteCount: {
-        fontSize: 14,
-        color: '#666',
-    },
-    notesList: {
-        padding: 12,
-    },
-    noteItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E5E5E5',
-    },
-    noteTitle: {
-        flex: 1,
-        fontSize: 14,
-        color: '#0B4619',
-        marginRight: 8,
-    },
-    noteDate: {
-        fontSize: 12,
-        color: '#666',
-    },
-    viewMoreButton: {
-        paddingTop: 8,
-    },
-    viewMoreText: {
-        color: '#0B4619',
-        fontSize: 14,
         textAlign: 'center',
+        marginBottom: 4,
+    },
+    folderSubtitle: {
+        fontSize: 14,
+        color: '#666',
+        textAlign: 'center',
+        opacity: 0.7,
+    },
+    addFolderCard: {
+        flex: 1,
+        borderWidth: 1,
+        borderColor: 'rgba(11, 70, 25, 0.3)',
+        borderStyle: 'dashed',
+        borderRadius: 16,
+        padding: 16,
+        margin: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: 140,
+        maxWidth: 160,
+        backgroundColor: 'rgba(11, 70, 25, 0.02)',
+    },
+    addIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(11, 70, 25, 0.3)',
+        borderStyle: 'dashed',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    addFolderText: {
+        fontSize: 16,
+        color: '#0B4619',
+        marginTop: 2,
+        textAlign: 'center',
+        opacity: 0.7,
+    },
+    addNoteTitle: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#0B4619',
+        lineHeight: 34,
+        letterSpacing: 0.3,
+    },
+    addNoteSubtitle: {
+        fontSize: 14,
+        color: '#666',
+        textAlign: 'center',
+        opacity: 0.7,
+    },
+    addNoteIconContainer: {
+        marginLeft: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 12,
+        width: 56,
+        height: 56,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });
