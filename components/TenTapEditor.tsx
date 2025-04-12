@@ -264,8 +264,7 @@ export interface TenTapEditorRef {
 
 const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function TenTapEditor(props, ref) {
   const {
-    initialContent = '',
-    themeId = THEME_IDS.LIGHT,
+    themeId = THEME_IDS.NATURE,
     onContentChange,
   } = props;
 
@@ -299,8 +298,7 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
   // Editor bridge setup
   const bridge = useEditorBridge({
     theme: getThemeConfig(currentThemeId),
-    initialContent,
-    autofocus: true,
+    autofocus: false,
     avoidIosKeyboard: false, // Turn this off as we're handling it with KeyboardAvoidingView
     bridgeExtensions: [
       ...TenTapStartKit,
@@ -445,8 +443,7 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
             { 
               borderTopColor: '#DDD',
               backgroundColor: getBackgroundColor(),
-              paddingBottom: Platform.OS === 'android' ? (keyboardVisible ? 85 : 0) : 0,
-              position: Platform.OS === 'android' ? 'absolute' : 'relative',
+              paddingBottom: Platform.OS === 'android' ? (keyboardVisible ? 35 : 0) : 0,
               bottom: Platform.OS === 'android' ? 0 : undefined,
               zIndex: 1000,
               elevation: 5, // Add Android elevation for better stacking
@@ -477,7 +474,8 @@ const styles = StyleSheet.create({
   },
   editorContainer: {
     flex: 1,
-    marginBottom: Platform.OS === 'android' ? 50 : 0,
+    paddingLeft: 20,
+    paddingRight: 20,
   },
   editor: {
     flex: 1,

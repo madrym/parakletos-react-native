@@ -902,7 +902,6 @@ export default function MobileFriendlyEditorPage() {
               orientation === 'landscape' && styles.editorContainerLandscape
             ]}>
               <TenTapEditor 
-                initialContent="<p>Start writing in your mobile friendly editor...</p>" 
                 themeId={currentTheme.id as any}
                 ref={editorRef}
                 onContentChange={handleContentChange}
