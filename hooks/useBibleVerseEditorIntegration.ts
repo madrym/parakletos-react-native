@@ -46,9 +46,35 @@ const useBibleVerseEditorIntegration = ({
     };
   }, []);
   
+  // Get text near cursor to detect Bible references
+  const getTextNearCursor = useCallback(() => {
+    if (!editor || !editor.getEditorState) return '';
+    
+    try {
+      // Get current selection
+      const selection = editor.getEditorState().selection;
+      const cursorPos = selection.to;
+      
+      // Try to get the current paragraph or surrounding text
+      // This is a simple approach - get 50 chars before and after cursor
+      const start = Math.max(0, cursorPos - 50);
+      const end = cursorPos + 50;
+      
+      // Use editorContent as the fallback since it's more reliable
+      if (editorContent) {
+        return editorContent;
+      }
+      
+      return '';
+    } catch (error) {
+      console.error('Error getting text near cursor:', error);
+      return '';
+    }
+  }, [editor, editorContent]);
+  
   // Detect Bible references in editor content
   useEffect(() => {
-    if (!enabled || !editorContent) {
+    if (!enabled || !editor) {
       return;
     }
     
@@ -59,7 +85,21 @@ const useBibleVerseEditorIntegration = ({
     
     // Debounce the detection to avoid excessive processing
     debounceTimer.current = setTimeout(() => {
-      const reference = detectBibleReference(editorContent);
+      // Get text near cursor
+      const textNearCursor = getTextNearCursor();
+      
+      if (!textNearCursor) {
+        // Clear detection if no text near cursor
+        if (detectedReference) {
+          setDetectedReference(null);
+          lastReference.current = null;
+          if (onDetection) onDetection(null);
+        }
+        return;
+      }
+      
+      // Only detect references in text near cursor
+      const reference = detectBibleReference(textNearCursor);
       
       // Only update if the reference has changed
       if (reference !== lastReference.current) {
@@ -77,7 +117,7 @@ const useBibleVerseEditorIntegration = ({
       }
     }, debounceMs);
     
-  }, [editorContent, enabled, debounceMs, onDetection]);
+  }, [editorContent, enabled, debounceMs, onDetection, getTextNearCursor, editor, detectedReference]);
   
   // Fetch verses when a reference is detected
   useEffect(() => {
@@ -118,34 +158,52 @@ const useBibleVerseEditorIntegration = ({
   
   /**
    * Insert verse(s) into the editor at the current cursor position
-   * Uses a simpler, non-collapsible HTML structure for better compatibility
+   * Inserts as a bold reference followed by indented quote block with bold verse numbers
    */
   const insertVerseAtCursor = useCallback(async (result: BibleResult) => {
     if (!editor) return;
     
     try {
-      // Create HTML for styled verse block with simple formatting
+      // Format verses as quote block with bold verse numbers and proper HTML line breaks
+      const versesText = result.verses.map(verse => 
+        `<p><strong>${verse.verse}</strong> ${verse.text}</p>`
+      ).join('');
+      
+      // Create HTML with bold reference and blockquote for verses
       const verseHTML = `
-        <div style="margin: 10px 0; border: 1px solid #0B4619; border-radius: 8px; background-color: #F5F5DC20; padding: 0; overflow: hidden;">
-          <div style="background-color: #0B461920; padding: 8px 12px; font-weight: bold; color: #0B4619; border-bottom: 1px solid #0B4619;">
-            ${result.formattedReference}
-          </div>
-          <div style="padding: 8px 12px;">
-            ${result.verses.map(verse => `
-              <div style="display: flex; margin-bottom: 4px;">
-                <span style="font-weight: bold; min-width: 20px; margin-right: 8px; color: #0B4619;">${verse.verse}</span>
-                <span style="flex: 1;">${verse.text}</span>
-              </div>
-            `).join('')}
-          </div>
-        </div>
+        <p><br></p> <!-- Add new line -->
+        <p><strong>${result.formattedReference}:</strong></p>
+        <blockquote>
+          ${versesText}
+        </blockquote>
+        <br> <!-- Just one line break after quote -->
       `;
       
-      // Get current selection
-      await editor.setSelection(editor.getEditorState().selection.from, editor.getEditorState().selection.to);
+      // Get current selection and move cursor to end of selection
+      const currentPos = editor.getEditorState().selection.to;
+      await editor.setSelection(currentPos, currentPos);
       
-      // Insert the HTML at the current position
-      await editor.setContent(verseHTML);
+      // Insert HTML at current cursor position using insertContentAtSelection
+      // This appends content rather than replacing it
+      if (editor.insertContentAtSelection) {
+        await editor.insertContentAtSelection(verseHTML); 
+      } else if (editor.insertHTML) {
+        await editor.insertHTML(verseHTML);
+      } else if (editor.insertText) {
+        // Fallback to insertText if insertHTML is not available
+        // This is less ideal as it loses formatting
+        const plainText = `\n\n${result.formattedReference}:\n\n` + 
+          result.verses.map(verse => `  ${verse.verse} ${verse.text}`).join('\n');
+        await editor.insertText(plainText);
+      } else {
+        // Get current content and append new content
+        const currentContent = await editor.getHTML();
+        const newContent = currentContent + verseHTML;
+        await editor.setContent(newContent, { 
+          addToHistory: true, 
+          parseOptions: { preserveWhitespace: true } 
+        });
+      }
       
       // Clear detection state
       clearDetection();
