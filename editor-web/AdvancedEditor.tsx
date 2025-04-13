@@ -13,7 +13,16 @@ import HardBreak from '@tiptap/extension-hard-break'; // For line breaks
 import Blockquote from '@tiptap/extension-blockquote'; // Used for verse insertion
 import Bold from '@tiptap/extension-bold'; // Used for verse insertion
 import { Editor } from '@tiptap/core'; // Import Editor type
-import { BibleVerseNode } from './extensions/BibleVerseNode'; // Use alias
+import { BibleVerseNode } from './extensions/BibleVerseNode';
+
+// Extend the Window interface to declare our custom function
+declare global {
+  interface Window {
+    myApp_insertBibleVerse?: (payloadString: string) => void;
+    tipTapEditor?: Editor | null; // Keep existing declaration if needed
+    dynamicHeight?: boolean; // Keep existing declaration
+  }
+}
 
 /**
  * This component renders the Tiptap editor within the WebView.
@@ -24,60 +33,55 @@ export const AdvancedEditor = () => {
 
   // Memoize bridge and extension configurations to prevent unnecessary re-renders
   const bridges = useMemo(() => [CoreBridge, ...TenTapStartKit], []);
-  const tiptapExtensions = useMemo(() => [BibleVerseNode], []);
-
-  // Callback to handle messages from React Native
-  const handleBridgeMessage = useCallback((message: { type: string; payload?: any }, editorInstance: Editor | null) => {
-    console.log('[Editor Web] Received message from RN:', message);
-    if (message.type === 'insertBibleVerse' && editorInstance && message.payload) {
-      const { reference, versesText } = message.payload;
-      if (reference && versesText) {
-        console.log('[Editor Web] Inserting bibleVerseBlock node via command...');
-        editorInstance.chain().focus()
-          .insertContentAt(editorInstance.state.selection.to, [
-            { type: 'paragraph', content: [] },
-            { type: 'bibleVerseBlock', attrs: { reference, versesText } },
-            { type: 'paragraph', content: [] },
-          ])
-          .run();
-        console.log('[Editor Web] Insertion command executed.');
-      } else {
-         console.error('[Editor Web] Invalid payload for insertBibleVerse:', message.payload);
-      }
-    }
-    // Handle other potential message types here
-  }, []); // Empty dependency array as it relies on editorInstance passed by useTenTap
+  const tiptapExtensions = useMemo(() => [
+    BibleVerseNode,
+  ], []);
 
   const editor = useTenTap({
-    // Use memoized configurations
     bridges: bridges,
     tiptapOptions: {
       extensions: tiptapExtensions,
-    },
-    // Add the message handler
-    onBridgeMessage: handleBridgeMessage,
-    // Add logging callbacks
-    onBeforeCreate: () => console.log('[Editor Web] Tiptap onBeforeCreate'),
-    onCreate: ({ editor }: { editor: Editor }) => {
-      console.log('[Editor Web] Tiptap onCreate starting. Editor object valid:', !!editor);
-      console.log('[Editor Web] Assigning editor to window.tipTapEditor...');
-      window.tipTapEditor = editor;
-      console.log('[Editor Web] Assignment complete. window.tipTapEditor is now type:', typeof window.tipTapEditor);
-      if (window.tipTapEditor && typeof window.tipTapEditor.isEditable !== 'undefined') {
-           console.log('[Editor Web] Confirmed: window.tipTapEditor.isEditable:', window.tipTapEditor.isEditable);
-      } else {
-           console.error('[Editor Web] CRITICAL: window.tipTapEditor is invalid or lacks properties immediately after assignment!');
-      }
-    },
-    onUpdate: () => console.log('[Editor Web] Tiptap onUpdate'),
-    onSelectionUpdate: () => console.log('[Editor Web] Tiptap onSelectionUpdate'),
-    onTransaction: () => console.log('[Editor Web] Tiptap onTransaction'),
-    onFocus: () => console.log('[Editor Web] Tiptap onFocus'),
-    onBlur: () => console.log('[Editor Web] Tiptap onBlur'),
-    onDestroy: () => {
-       console.log('[Editor Web] Tiptap onDestroy');
-       // *** Clean up global reference ***
-       window.tipTapEditor = null;
+      onBeforeCreate: () => console.log('[Editor Web] Tiptap onBeforeCreate'),
+      onCreate: ({ editor }: { editor: Editor }) => {
+        console.log('!!!!!!!!!!!!!!!!!!!!!! [Editor Web] onCreate START !!!!!!!!!!!!!!!!!!!!!!');
+
+        // Define the global function INSIDE onCreate
+        window.myApp_insertBibleVerse = (payloadString: string) => {
+          console.log('[Editor Web] window.myApp_insertBibleVerse (defined in onCreate) called.');
+          if (!editor) {
+            console.error('[Editor Web] Editor instance missing within myApp_insertBibleVerse!');
+            return;
+          }
+          try {
+            const payload = JSON.parse(payloadString);
+            const { reference, versesText } = payload;
+            // Re-enable Tiptap command execution
+            if (reference && versesText && editor.commands) {
+              console.log('[Editor Web] Inserting bibleVerseBlock node...');
+              editor.chain().focus()
+                .insertContentAt(editor.state.selection.to, [
+                  { type: 'paragraph', content: [] },
+                  // Use bibleVerseBlock type again
+                  { type: 'bibleVerseBlock', attrs: { reference, versesText } },
+                  { type: 'paragraph', content: [] },
+                ])
+                .run();
+              console.log('[Editor Web] Insertion command executed.');
+            } else {
+              console.error('[Editor Web] Invalid payload or editor commands missing.');
+            }
+          } catch (e) {
+            console.error('[Editor Web] Error in window.myApp_insertBibleVerse:', e);
+          }
+        };
+        // Log AFTER function definition
+        console.log('!!!!!!!!!!!!!!!!!!!!!! [Editor Web] onCreate END - myApp_insertBibleVerse defined !!!!!!!!!!!!!!!!!!!!!!');
+      },
+      onUpdate: () => console.log('[Editor Web] Tiptap onUpdate'),
+      onDestroy: () => {
+        console.log('[Editor Web] Tiptap onDestroy');
+        window.myApp_insertBibleVerse = undefined; // Clean up the function reference
+      },
     },
   });
 

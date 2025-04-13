@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
-import { BibleVerseComponent } from '@components/BibleVerseComponent';
+import { BibleVerseComponent } from '../components/BibleVerseComponent';
 
 /**
  * Tiptap Node Extension for rendering interactive Bible verse blocks.
@@ -49,15 +49,17 @@ export const BibleVerseNode = Node.create({
   },
 
   renderHTML({ HTMLAttributes, node }) {
-    // Render basic structure for saving, NodeView handles the display
+    // Render basic structure for saving
     return [
       'div',
       mergeAttributes(HTMLAttributes, { class: 'bible-verse-block', 'data-reference': node.attrs.reference, 'data-verses': node.attrs.versesText }),
-      // No need to render inner structure here, parseHTML gets attrs from the main div
+      // Render simple representation when NodeView is disabled
+      // ['strong', node.attrs.reference],
+      // ['div', { class: 'simple-verses-text' }, node.attrs.versesText] \n    ];
     ];
   },
 
-  // Connect the React component as the NodeView
+  // Restore the React NodeView
   addNodeView() {
     return ReactNodeViewRenderer(BibleVerseComponent);
   },

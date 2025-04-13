@@ -4,6 +4,11 @@
   "compilerOptions": {
     "lib": ["dom", "dom.iterable", "esnext"],
     "module": "esnext",
+    "paths": {
+      "@10play/tentap-editor": [
+        "../node_modules/@10play/tentap-editor/lib-web/typescript/webEditorUtils/index.d.ts"
+      ]
+    },
     "moduleResolution": "bundler",
     "target": "es2015",
     "allowJs": true,
@@ -17,9 +22,10 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
-    "baseUrl": "..",
-    "types": ["jest", "node"]
+    "baseUrl": ".",
+    "outDir": "./build",
+    "rootDir": "."
   },
-  "include": ["./**/*.ts", "./**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules", "build"]
 } 

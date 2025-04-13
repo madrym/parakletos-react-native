@@ -176,89 +176,54 @@ const useBibleVerseEditorIntegration = ({
   }, []);
   
   /**
-   * Insert verse(s) into the editor at the current cursor position
-   * Inserts as a bold reference followed by indented quote block with bold verse numbers
+   * Inserts the fetched Bible verse content into the editor at the current cursor position.
+   * Uses the editor bridge communication channel instead of direct JS injection.
+   *
+   * @param bibleResult - The BibleResult object containing reference and verse text.
    */
-  const insertVerseAtCursor = useCallback(async (result: BibleResult) => {
-    console.log('[Hook] insertVerseAtCursor called. Current editor value:', editor ? 'Object' : String(editor));
-    console.log('[Hook] insertVerseAtCursor called with reference:', result.formattedReference);
-    // Use the EditorBridge object - Check for injectJS
+  const insertVerseAtCursor = useCallback((bibleResult: BibleResult) => {
+    // Check if editor and injectJS method are available
     if (!editor || typeof editor.injectJS !== 'function') { 
-      console.error('[Hook] Editor bridge or injectJS method not available.');
-      if (editor) {
-        console.log('[Hook] Available keys on editor bridge object:', Object.keys(editor));
-      } else {
-        console.log('[Hook] Editor bridge object is null/undefined.');
-      }
-      return false;
-    } 
-    
-    try {
-      const versesText = result.verses.map(verse => 
-        // Keep verse text formatting simple
-        `<p><strong>${verse.verse}</strong> ${verse.text.replace(/\"/g, '&quot;')}</p>` // Ensure quotes in verse text are HTML entities
-      ).join('');
-
-      // Construct the JSON payload for insertContentAt
-      const contentToInsert = [
-        { type: 'paragraph', content: [] }, // Spacer
-        {
-          type: 'bibleVerseBlock',
-          attrs: {
-            reference: result.formattedReference,
-            // Ensure versesText is correctly handled as HTML string within the JSON
-            versesText: versesText, 
-          },
-        },
-        { type: 'paragraph', content: [] }, // Spacer
-      ];
-
-      // Convert payload to a JSON string - ensure proper escaping for JS template literal
-      const jsonPayload = JSON.stringify(contentToInsert);
-      
-      // Construct the JavaScript command string with retry logic
-      // Use a function wrapper and setTimeout for retries
-      const command = `
-        function tryInsertVerse(retries = 5) {
-          if (window.tipTapEditor && window.tipTapEditor.commands && window.tipTapEditor.state) {
-            try {
-              // Parse the JSON *inside* the webview context
-              const content = JSON.parse(\`${jsonPayload.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`); 
-              const currentPos = window.tipTapEditor.state.selection.to;
-              console.log('[WebView JS] Attempting insertContentAt command at pos ', currentPos, ' with content:', content);
-              window.tipTapEditor.chain().focus().insertContentAt(currentPos, content).run();
-              console.log('[WebView JS] Command executed successfully.');
-            } catch (e) {
-              console.error('[WebView JS] Error executing Tiptap command:', e);
-            }
-          } else if (retries > 0) {
-            console.log('[WebView JS] window.tipTapEditor not ready, retrying (' + retries + ' left)...');
-            setTimeout(() => tryInsertVerse(retries - 1), 150); // Wait 150ms before retrying
-          } else {
-            console.error('[WebView JS] window.tipTapEditor not found or not ready after multiple retries.');
-            // Optional: Log available window properties for debugging
-            console.log('[WebView JS] Available window keys:', Object.keys(window)); 
-          }
-        }
-        tryInsertVerse(); // Initial call to start the process
-      `;
-
-      console.log('[Hook] Injecting JavaScript command via injectJS (with retry logic):', command);
-      // Execute the command in the WebView using injectJS
-      editor.injectJS(command);
-      
-      // injectJS doesn't return success/failure, assume initiated
-      const success = true; 
-      
-      if(success) {
-         clearDetection(); // Clear detection optimistically
-      }
-      
-      return success;
-    } catch (error) {
-      console.error('[Hook] Error preparing or injecting JavaScript:', error);
-      return false;
+      console.warn('[Hook] insertVerseAtCursor called but editor or injectJS method is not ready.');
+      return;
     }
+    
+    if (!bibleResult || !bibleResult.formattedReference || !Array.isArray(bibleResult.verses) || bibleResult.verses.length === 0) { 
+      console.warn('[Hook] insertVerseAtCursor called with invalid bibleResult:', bibleResult);
+      return;
+    }
+
+    console.log(`[Hook] insertVerseAtCursor called with reference: ${bibleResult.formattedReference}`);
+
+    const versesTextHtml = bibleResult.verses.map(verse => 
+      // Ensure quotes within the text are escaped for the HTML attribute
+      `<p><strong>${verse.verse}</strong> ${verse.text.replace(/"/g, '&quot;')}</p>`
+    ).join('');
+
+    // Prepare payload
+    const payload = {
+      reference: bibleResult.formattedReference,
+      versesText: versesTextHtml,
+    };
+    
+    // Convert payload to a JSON string. Escape only for JS string literal context.
+    const payloadStringForInjection = JSON.stringify(payload)
+        .replace(/\\/g, '\\\\') // Escape backslashes
+        .replace(/'/g, "\\'");  // Escape single quotes (for the outer JS string)
+
+    // Construct JS command to call the globally defined function in the WebView, WITH RETRY
+    const jsCommand = `\n      function tryCallGlobalFunction(payload, retries = 10) { // Using 10 retries, 300ms interval\n        if (typeof window.myApp_insertBibleVerse === 'function') {\n          console.log(\'[WebView JS - Inject] Found window.myApp_insertBibleVerse, calling now...');\n          try {\n             window.myApp_insertBibleVerse(payload);\n          } catch (e) {\n             console.error(\'[WebView JS - Inject] Error executing window.myApp_insertBibleVerse:\', e);\n          } \n        } else if (retries > 0) {\n          console.log(\'[WebView JS - Inject] window.myApp_insertBibleVerse not found, retrying (\' + retries + \' left)...');\n          setTimeout(() => tryCallGlobalFunction(payload, retries - 1), 300); \n        } else {\n          console.error(\'[WebView JS - Inject] window.myApp_insertBibleVerse function not found after multiple retries!\');\n        }\n      }\n      // Initial call, passing the escaped payload string\n      tryCallGlobalFunction('${payloadStringForInjection}'); \n    `;
+
+    try {
+      console.log('[Hook] Injecting JS command to call global WebView function (with retry).');
+      // console.log(jsCommand); // Uncomment for debugging
+      editor.injectJS(jsCommand);
+      console.log('[Hook] JS Injection command sent.');
+      clearDetection(); 
+    } catch (e) {
+      console.error('[Hook] Error injecting JavaScript:', e);
+    }
+
   }, [editor, clearDetection]);
   
   /**
