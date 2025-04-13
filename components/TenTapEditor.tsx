@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle, useEffect } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
 import {
   SafeAreaView,
   View,
@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   Keyboard,
   UIManager,
+  Text
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
@@ -25,7 +26,11 @@ import {
   EditorTheme,
   RecursivePartial
 } from '@10play/tentap-editor';
-import BibleVerseEditorIntegration, { createBibleToolbarButton } from './BibleVerseEditorIntegration';
+import { editorHtml } from '../editor-web/build/editorHtml'; // Import the custom HTML source
+import useBibleVerseEditorIntegration from '../hooks/useBibleVerseEditorIntegration'; // Import the hook
+import BibleVersePreview from './BibleVersePreview'; // Import Preview component
+import BibleReferenceModal from './BibleReferenceModal'; // Import Modal component
+import { BibleResult } from '../utils/bible'; // Import BibleResult type
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === 'android') {
@@ -224,58 +229,7 @@ const lightCSS = `
     color: #666666;
   }
   
-  /* Bible verse styling */
-  .bible-verse-block {
-    margin: 10px 0;
-    border: 1px solid rgba(11, 70, 25, 0.3);
-    border-radius: 8px;
-    overflow: hidden;
-    background-color: rgba(245, 245, 220, 0.2);
-  }
-  .bible-verse-header {
-    padding: 8px 12px;
-    background-color: rgba(11, 70, 25, 0.1);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .bible-verse-reference {
-    font-weight: bold;
-    color: #0B4619;
-  }
-  .bible-verse-toggle {
-    color: #0B4619;
-    font-size: 12px;
-    margin-left: 8px;
-  }
-  .bible-verse-content {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out;
-  }
-  .bible-verse-block:hover .bible-verse-content,
-  .bible-verse-block:focus-within .bible-verse-content {
-    max-height: 1000px; /* Large enough to contain content */
-    padding: 8px 12px;
-  }
-  .bible-verse-block:hover .bible-verse-toggle,
-  .bible-verse-block:focus-within .bible-verse-toggle {
-    transform: rotate(180deg);
-  }
-  .bible-verse {
-    display: flex;
-    margin-bottom: 4px;
-  }
-  .bible-verse-number {
-    font-weight: bold;
-    min-width: 20px;
-    margin-right: 8px;
-    color: #0B4619;
-  }
-  .bible-verse-text {
-    flex: 1;
-  }
+  /* Bible verse styling removed - moved to editor-web/index.html */
 `;
 
 // Added Nature theme CSS
@@ -318,58 +272,7 @@ const natureCSS = `
     padding-bottom: 4px;
   }
   
-  /* Bible verse styling */
-  .bible-verse-block {
-    margin: 10px 0;
-    border: 1px solid rgba(11, 70, 25, 0.3);
-    border-radius: 8px;
-    overflow: hidden;
-    background-color: rgba(11, 70, 25, 0.05);
-  }
-  .bible-verse-header {
-    padding: 8px 12px;
-    background-color: rgba(11, 70, 25, 0.1);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .bible-verse-reference {
-    font-weight: bold;
-    color: #0B4619;
-  }
-  .bible-verse-toggle {
-    color: #0B4619;
-    font-size: 12px;
-    margin-left: 8px;
-  }
-  .bible-verse-content {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out;
-  }
-  .bible-verse-block:hover .bible-verse-content,
-  .bible-verse-block:focus-within .bible-verse-content {
-    max-height: 1000px; /* Large enough to contain content */
-    padding: 8px 12px;
-  }
-  .bible-verse-block:hover .bible-verse-toggle,
-  .bible-verse-block:focus-within .bible-verse-toggle {
-    transform: rotate(180deg);
-  }
-  .bible-verse {
-    display: flex;
-    margin-bottom: 4px;
-  }
-  .bible-verse-number {
-    font-weight: bold;
-    min-width: 20px;
-    margin-right: 8px;
-    color: #0B4619;
-  }
-  .bible-verse-text {
-    flex: 1;
-  }
+  /* Bible verse styling removed - moved to editor-web/index.html */
 `;
 
 const obsidianCSS = `
@@ -402,117 +305,14 @@ const obsidianCSS = `
     color: #cccccc;
   }
   
-  /* Bible verse styling */
-  .bible-verse-block {
-    margin: 10px 0;
-    border: 1px solid rgba(135, 169, 107, 0.3);
-    border-radius: 8px;
-    overflow: hidden;
-    background-color: rgba(48, 48, 48, 0.6);
-  }
-  .bible-verse-header {
-    padding: 8px 12px;
-    background-color: rgba(135, 169, 107, 0.15);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .bible-verse-reference {
-    font-weight: bold;
-    color: #87A96B;
-  }
-  .bible-verse-toggle {
-    color: #87A96B;
-    font-size: 12px;
-    margin-left: 8px;
-  }
-  .bible-verse-content {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out;
-  }
-  .bible-verse-block:hover .bible-verse-content,
-  .bible-verse-block:focus-within .bible-verse-content {
-    max-height: 1000px; /* Large enough to contain content */
-    padding: 8px 12px;
-  }
-  .bible-verse-block:hover .bible-verse-toggle,
-  .bible-verse-block:focus-within .bible-verse-toggle {
-    transform: rotate(180deg);
-  }
-  .bible-verse {
-    display: flex;
-    margin-bottom: 4px;
-  }
-  .bible-verse-number {
-    font-weight: bold;
-    min-width: 20px;
-    margin-right: 8px;
-    color: #87A96B;
-  }
-  .bible-verse-text {
-    flex: 1;
-  }
+  /* Bible verse styling removed - moved to editor-web/index.html */
 `;
 
 // Dark theme CSS with Bible verse styling
 const darkCSSWithBibleVerses = `
   ${darkEditorCss}
   
-  /* Bible verse styling for dark theme */
-  .bible-verse-block {
-    margin: 10px 0;
-    border: 1px solid rgba(135, 169, 107, 0.3);
-    border-radius: 8px;
-    overflow: hidden;
-    background-color: rgba(30, 30, 30, 0.8);
-  }
-  .bible-verse-header {
-    padding: 8px 12px;
-    background-color: rgba(135, 169, 107, 0.15);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .bible-verse-reference {
-    font-weight: bold;
-    color: #87A96B;
-  }
-  .bible-verse-toggle {
-    color: #87A96B;
-    font-size: 12px;
-    margin-left: 8px;
-  }
-  .bible-verse-content {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out;
-  }
-  .bible-verse-block:hover .bible-verse-content,
-  .bible-verse-block:focus-within .bible-verse-content {
-    max-height: 1000px; /* Large enough to contain content */
-    padding: 8px 12px;
-  }
-  .bible-verse-block:hover .bible-verse-toggle,
-  .bible-verse-block:focus-within .bible-verse-toggle {
-    transform: rotate(180deg);
-  }
-  .bible-verse {
-    display: flex;
-    margin-bottom: 4px;
-  }
-  .bible-verse-number {
-    font-weight: bold;
-    min-width: 20px;
-    margin-right: 8px;
-    color: #87A96B;
-  }
-  .bible-verse-text {
-    flex: 1;
-    color: #F5F5DC;
-  }
+  /* Bible verse styling removed - moved to editor-web/index.html */
 `;
 
 // Theme IDs
@@ -579,6 +379,7 @@ const bibleVerseToggleScript = `
 
 const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function TenTapEditor(props, ref) {
   const {
+    initialContent = '', // Add default initial content
     themeId = THEME_IDS.NATURE,
     onContentChange,
   } = props;
@@ -610,27 +411,13 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
     };
   }, []);
 
-  // Add Bible button to toolbar
-  const toolbarItemsWithBible: ToolbarItem[] = [
-    ...DEFAULT_TOOLBAR_ITEMS,
-    {
-      name: 'bible',
-      type: 'button',
-      image: () => require('../assets/images/bible.png'),
-      onPress: () => () => {
-        // This action will be overridden by the BibleVerseEditorIntegration component
-        console.log('Bible button clicked');
-      },
-      active: () => false,
-      disabled: () => false
-    } as unknown as ToolbarItem
-  ];
-
   // Editor bridge setup
   const bridge = useEditorBridge({
+    customSource: editorHtml, // Use the custom built HTML
     theme: getThemeConfig(currentThemeId),
     autofocus: false,
     avoidIosKeyboard: false, // Turn this off as we're handling it with KeyboardAvoidingView
+    initialContent: initialContent, // Pass initial content
     bridgeExtensions: [
       ...TenTapStartKit,
       {
@@ -677,22 +464,92 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
         extendExtension: () => null,
         configureTiptapExtensionsOnRunTime: () => null
       } as unknown as BridgeExtension<any, any, any>,
-      // Add custom bridge extension for Bible verse interaction
-      {
-        name: 'bible-verse-handler',
-        configureExtension: () => {
-          // Return JavaScript to initialize and handle Bible verse toggling
-          return bibleVerseToggleScript;
-        },
-        // Add missing required methods
-        clone: () => null,
-        onMessage: () => null,
-        configureCSS: () => null,
-        extendExtension: () => null,
-        configureTiptapExtensionsOnRunTime: () => null
-      } as unknown as BridgeExtension<any, any, any>
+      // Add custom bridge extension for Bible verse interaction (if needed)
+      // Note: The NodeView now handles clicks, so this might be redundant unless
+      // you need other JS interactions from the web side.
+      // {
+      //   name: 'bible-verse-handler',
+      //   configureExtension: () => bibleVerseToggleScript, 
+      //   ...
+      // }
     ]
   });
+
+  // *** Add Log ***
+  console.log('[TenTapEditor] Rendering. Bridge value is:', bridge ? 'Object' : String(bridge));
+
+  // Call the Bible Verse Integration Hook
+  const {
+    openReferenceModal, 
+    modalVisible, 
+    closeReferenceModal, 
+    insertVerseAtCursor, // Use insertVerseAtCursor directly now
+    detectedReference, 
+    bibleResult, 
+    loading, 
+    error, 
+    clearDetection, // Need clearDetection for Preview onClose
+  } = useBibleVerseEditorIntegration({
+    editor: bridge, 
+    enabled: true, 
+  });
+
+  // *** Calculate Preview Position (Simplified - consider moving to hook or separate util) ***
+  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const editorContainerRef = useRef<View>(null);
+  
+  // Simplified effect to get cursor position when preview should show
+  useEffect(() => {
+    const getCursorPos = async () => {
+      if (bridge && typeof (bridge as any).getSelectionBoundingRect === 'function' && detectedReference) {
+        try {
+          const rect = await (bridge as any).getSelectionBoundingRect();
+          if (rect && editorContainerRef.current) {
+            editorContainerRef.current.measure((_x, _y, _w, _h, pageX, pageY) => {
+              // Basic positioning - might need refinement
+              setCursorPosition({ x: pageX, y: rect.bottom + pageY + 10 }); 
+            });
+          }
+        } catch (e) {
+          console.log("Error getting cursor pos:", e);
+        }
+      }
+    };
+    getCursorPos();
+  }, [detectedReference, bridge, keyboardVisible]); // Re-check on keyboard visibility
+
+  // Determine if preview should be shown
+  const showPreview = !!(detectedReference && (bibleResult || loading || error));
+
+  // Simplified preview positioning logic
+  const getPreviewStyle = () => ({
+    position: 'absolute' as 'absolute',
+    left: 20,
+    right: 20,
+    top: cursorPosition.y, // Use state for position
+    maxWidth: Dimensions.get('window').width - 40,
+    zIndex: 1000,
+    // Add adjustments for keyboard if needed
+  });
+  // *** End Preview Position Calculation ***
+
+  // Add Bible button to toolbar
+  const toolbarItemsWithBible: ToolbarItem[] = [
+    ...DEFAULT_TOOLBAR_ITEMS,
+    {
+      name: 'bible',
+      type: 'button',
+      image: () => require('../assets/images/bible.png'),
+      onPress: () => () => {
+        if (bridge && openReferenceModal) {
+          console.log('Toolbar: Opening Bible reference modal...');
+          openReferenceModal(); // Call the function from the hook
+        }
+      },
+      active: () => false,
+      disabled: () => !bridge, // Disable if bridge isn't ready
+    } as unknown as ToolbarItem
+  ];
 
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
@@ -766,9 +623,6 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
     }
   };
 
-  const isEditorReady = bridge !== null;
-
-  // Get current theme from constants
   const getCurrentTheme = () => {
     switch (currentThemeId) {
       case THEME_IDS.LIGHT:
@@ -783,49 +637,70 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
         return THEMES.NATURE;
     }
   };
+  
+  const isEditorReady = bridge !== null;
+  const currentAppTheme = getCurrentTheme(); // Get current theme object
 
   return (
-    <View style={styles.mainContainer}>
+    <View style={styles.mainContainer} ref={editorContainerRef}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingContainer}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 60}
       >
         <SafeAreaView style={[styles.container, { backgroundColor: getBackgroundColor() }]}>
-          <BibleVerseEditorIntegration
-            editor={bridge}
-            theme={{
-              background: getCurrentTheme().background,
-              text: getCurrentTheme().text,
-              header: getCurrentTheme().header
-            }}
-          >
-            <View style={[styles.editorContainer, { backgroundColor: getBackgroundColor() }]}>
-              <RichText
-                editor={bridge}
-                style={[styles.editor, { backgroundColor: getBackgroundColor() }]}
-              />
-            </View>
+          <View style={[styles.editorContainer, { backgroundColor: getBackgroundColor() }]}>
+            <RichText
+              editor={bridge}
+              style={[styles.editor, { backgroundColor: getBackgroundColor() }]}
+            />
+          </View>
             
-            <View style={[
-              styles.toolbarWrapper, 
-              { 
-                borderTopColor: '#DDD',
-                backgroundColor: getBackgroundColor(),
-                paddingBottom: Platform.OS === 'android' ? (keyboardVisible ? 35 : 0) : 0,
-                bottom: Platform.OS === 'android' ? 0 : undefined,
-                zIndex: 1000,
-                elevation: 5, // Add Android elevation for better stacking
-              }
-            ]}>
-              <Toolbar
-                editor={bridge}
-                items={toolbarItemsWithBible}
-              />
-            </View>
-          </BibleVerseEditorIntegration>
+          <View style={[
+            styles.toolbarWrapper, 
+            { 
+              borderTopColor: '#DDD',
+              backgroundColor: getBackgroundColor(),
+              paddingBottom: Platform.OS === 'android' ? (keyboardVisible ? 35 : 0) : 0,
+              bottom: Platform.OS === 'android' ? 0 : undefined,
+              zIndex: 1000,
+              elevation: 5, // Add Android elevation for better stacking
+            }
+          ]}>
+            <Toolbar
+              editor={bridge}
+              items={toolbarItemsWithBible}
+            />
+          </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
+      
+      {/* Render Bible Verse Preview */} 
+      {showPreview && isEditorReady && (
+        <View style={getPreviewStyle()}>
+          <BibleVersePreview
+            reference={detectedReference || ''}
+            bibleResult={bibleResult}
+            loading={loading}
+            error={error}
+            // Use insertVerseAtCursor directly for node insertion
+            onInsert={(result: BibleResult) => insertVerseAtCursor(result)}
+            onClose={clearDetection} // Use clearDetection from hook
+            theme={currentAppTheme} // Pass theme object
+          />
+        </View>
+      )}
+      
+      {/* Render Bible Reference Modal */} 
+      {isEditorReady && (
+        <BibleReferenceModal
+          visible={modalVisible} // Use modalVisible from hook
+          onClose={closeReferenceModal} // Use closeReferenceModal from hook
+          // Use insertVerseAtCursor directly for node insertion
+          onInsert={(result: BibleResult) => insertVerseAtCursor(result)}
+          theme={currentAppTheme} // Pass theme object
+        />
+      )}
     </View>
   );
 });
@@ -833,6 +708,7 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
+    position: 'relative'
   },
   keyboardAvoidingContainer: {
     flex: 1,
@@ -855,6 +731,18 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     minHeight: 50,
   },
+  modalPlaceholder: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    padding: 20,
+    backgroundColor: 'white',
+    borderRadius: 10,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: '#ccc'
+  }
 });
 
 export default TenTapEditor; 

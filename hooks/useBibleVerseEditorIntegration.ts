@@ -21,6 +21,9 @@ const useBibleVerseEditorIntegration = ({
   debounceMs = 800,
   onDetection
 }: UseBibleVerseEditorIntegrationProps) => {
+  // *** Add Log ***
+  console.log('[Hook] Running. Editor prop is:', editor ? 'Object' : String(editor));
+  
   // Get editor content using the TenTapEditor hook (automatically debounced)
   const editorContent = useEditorContent(editor, { type: 'text', debounceInterval: 10 });
   
@@ -52,7 +55,13 @@ const useBibleVerseEditorIntegration = ({
     
     try {
       // Get current selection
-      const selection = editor.getEditorState().selection;
+      const editorState = editor.getEditorState();
+      // Add check: Ensure editorState and selection are defined before accessing 'to'
+      if (!editorState || !editorState.selection) {
+        console.warn('getTextNearCursor: Editor state or selection is not available yet.');
+        return editorContent || ''; // Fallback to editorContent if available
+      }
+      const selection = editorState.selection;
       const cursorPos = selection.to;
       
       // Try to get the current paragraph or surrounding text
@@ -60,17 +69,27 @@ const useBibleVerseEditorIntegration = ({
       const start = Math.max(0, cursorPos - 50);
       const end = cursorPos + 50;
       
-      // Use editorContent as the fallback since it's more reliable
+      // Use editorContent as the fallback since it's more reliable if text extraction fails
+      // Note: This might not perfectly reflect text around the *actual* cursor
       if (editorContent) {
-        return editorContent;
+        // Consider slicing editorContent around an estimated position if needed,
+        // but for reference detection, the full content might be okay.
+        return editorContent.slice(start, end); // Attempt to get relevant slice
+      } else {
+        // If editorContent is also unavailable, try direct node text (might fail)
+        const node = editorState.doc.nodeAt(cursorPos);
+        if (node && node.textContent) {
+          return node.textContent; // Get text from the current node
+        } else {
+          return ''; // Return empty if no text found
+        }
       }
-      
-      return '';
+
     } catch (error) {
       console.error('Error getting text near cursor:', error);
       return '';
     }
-  }, [editor, editorContent]);
+  }, [editor, editorContent]); // Keep dependencies, but logic depends more on editor state
   
   // Detect Bible references in editor content
   useEffect(() => {
@@ -161,56 +180,83 @@ const useBibleVerseEditorIntegration = ({
    * Inserts as a bold reference followed by indented quote block with bold verse numbers
    */
   const insertVerseAtCursor = useCallback(async (result: BibleResult) => {
-    if (!editor) return;
+    console.log('[Hook] insertVerseAtCursor called. Current editor value:', editor ? 'Object' : String(editor));
+    console.log('[Hook] insertVerseAtCursor called with reference:', result.formattedReference);
+    // Use the EditorBridge object - Check for injectJS
+    if (!editor || typeof editor.injectJS !== 'function') { 
+      console.error('[Hook] Editor bridge or injectJS method not available.');
+      if (editor) {
+        console.log('[Hook] Available keys on editor bridge object:', Object.keys(editor));
+      } else {
+        console.log('[Hook] Editor bridge object is null/undefined.');
+      }
+      return false;
+    } 
     
     try {
-      // Format verses as quote block with bold verse numbers and proper HTML line breaks
       const versesText = result.verses.map(verse => 
-        `<p><strong>${verse.verse}</strong> ${verse.text}</p>`
+        // Keep verse text formatting simple
+        `<p><strong>${verse.verse}</strong> ${verse.text.replace(/\"/g, '&quot;')}</p>` // Ensure quotes in verse text are HTML entities
       ).join('');
+
+      // Construct the JSON payload for insertContentAt
+      const contentToInsert = [
+        { type: 'paragraph', content: [] }, // Spacer
+        {
+          type: 'bibleVerseBlock',
+          attrs: {
+            reference: result.formattedReference,
+            // Ensure versesText is correctly handled as HTML string within the JSON
+            versesText: versesText, 
+          },
+        },
+        { type: 'paragraph', content: [] }, // Spacer
+      ];
+
+      // Convert payload to a JSON string - ensure proper escaping for JS template literal
+      const jsonPayload = JSON.stringify(contentToInsert);
       
-      // Create HTML with bold reference and blockquote for verses
-      const verseHTML = `
-        <p><br></p> <!-- Add new line -->
-        <p><strong>${result.formattedReference}:</strong></p>
-        <blockquote>
-          ${versesText}
-        </blockquote>
-        <br> <!-- Just one line break after quote -->
+      // Construct the JavaScript command string with retry logic
+      // Use a function wrapper and setTimeout for retries
+      const command = `
+        function tryInsertVerse(retries = 5) {
+          if (window.tipTapEditor && window.tipTapEditor.commands && window.tipTapEditor.state) {
+            try {
+              // Parse the JSON *inside* the webview context
+              const content = JSON.parse(\`${jsonPayload.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`); 
+              const currentPos = window.tipTapEditor.state.selection.to;
+              console.log('[WebView JS] Attempting insertContentAt command at pos ', currentPos, ' with content:', content);
+              window.tipTapEditor.chain().focus().insertContentAt(currentPos, content).run();
+              console.log('[WebView JS] Command executed successfully.');
+            } catch (e) {
+              console.error('[WebView JS] Error executing Tiptap command:', e);
+            }
+          } else if (retries > 0) {
+            console.log('[WebView JS] window.tipTapEditor not ready, retrying (' + retries + ' left)...');
+            setTimeout(() => tryInsertVerse(retries - 1), 150); // Wait 150ms before retrying
+          } else {
+            console.error('[WebView JS] window.tipTapEditor not found or not ready after multiple retries.');
+            // Optional: Log available window properties for debugging
+            console.log('[WebView JS] Available window keys:', Object.keys(window)); 
+          }
+        }
+        tryInsertVerse(); // Initial call to start the process
       `;
+
+      console.log('[Hook] Injecting JavaScript command via injectJS (with retry logic):', command);
+      // Execute the command in the WebView using injectJS
+      editor.injectJS(command);
       
-      // Get current selection and move cursor to end of selection
-      const currentPos = editor.getEditorState().selection.to;
-      await editor.setSelection(currentPos, currentPos);
+      // injectJS doesn't return success/failure, assume initiated
+      const success = true; 
       
-      // Insert HTML at current cursor position using insertContentAtSelection
-      // This appends content rather than replacing it
-      if (editor.insertContentAtSelection) {
-        await editor.insertContentAtSelection(verseHTML); 
-      } else if (editor.insertHTML) {
-        await editor.insertHTML(verseHTML);
-      } else if (editor.insertText) {
-        // Fallback to insertText if insertHTML is not available
-        // This is less ideal as it loses formatting
-        const plainText = `\n\n${result.formattedReference}:\n\n` + 
-          result.verses.map(verse => `  ${verse.verse} ${verse.text}`).join('\n');
-        await editor.insertText(plainText);
-      } else {
-        // Get current content and append new content
-        const currentContent = await editor.getHTML();
-        const newContent = currentContent + verseHTML;
-        await editor.setContent(newContent, { 
-          addToHistory: true, 
-          parseOptions: { preserveWhitespace: true } 
-        });
+      if(success) {
+         clearDetection(); // Clear detection optimistically
       }
       
-      // Clear detection state
-      clearDetection();
-      
-      return true;
+      return success;
     } catch (error) {
-      console.error('Error inserting verse:', error);
+      console.error('[Hook] Error preparing or injecting JavaScript:', error);
       return false;
     }
   }, [editor, clearDetection]);
@@ -226,6 +272,7 @@ const useBibleVerseEditorIntegration = ({
       setError(undefined);
       
       const result = await getVersesFromReference(reference);
+      // Directly call insertVerseAtCursor which now handles node insertion
       return await insertVerseAtCursor(result);
     } catch (err) {
       console.error('Error inserting verse from reference:', err);
@@ -234,7 +281,7 @@ const useBibleVerseEditorIntegration = ({
     } finally {
       setLoading(false);
     }
-  }, [editor, insertVerseAtCursor]);
+  }, [editor, insertVerseAtCursor]); // Ensure insertVerseAtCursor is dependency
   
   /**
    * Open the Bible reference modal

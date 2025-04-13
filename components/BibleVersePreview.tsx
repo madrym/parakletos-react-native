@@ -49,6 +49,17 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
   // Check if we have valid verse content to display - always show button when bibleResult exists
   const hasResult = bibleResult !== undefined;
 
+  // *** Add Log ***
+  console.log('[BibleVersePreview] Rendering:',
+    {
+      reference,
+      hasResult,
+      loading,
+      error,
+      bibleResultExists: !!bibleResult,
+    }
+  );
+
   return (
     <View style={[
       styles.container, 
@@ -114,7 +125,13 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
             backgroundColor: theme.header,
             opacity: !hasResult || loading || error ? 0.6 : 1 
           }]} 
-          onPress={() => hasResult && onInsert(bibleResult!)}
+          onPress={() => {
+            // *** Add Log ***
+            console.log('[BibleVersePreview] Insert button pressed. Has result:', hasResult);
+            if (hasResult && bibleResult) { // Check bibleResult again just in case
+              onInsert(bibleResult);
+            }
+          }}
           disabled={!!((!hasResult) || loading || error)}
           accessibilityLabel="Insert verse"
           accessibilityRole="button"
