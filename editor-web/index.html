@@ -21,6 +21,8 @@
       width: 100%;
       top: 0;
       bottom: 0;
+      /* Remove any borders that might create visual dividers */
+      border: none;
     }
     #root > div.dynamic-height {
       height: unset;
@@ -31,12 +33,26 @@
       overflow: auto;
       padding: 10px; /* Add padding to ProseMirror */
       outline: none;
+      /* Remove any borders that might create visual dividers */
+      border: none !important;
     }
     #root div.dynamic-height .ProseMirror {
       height: unset;
     }
     .ProseMirror:focus {
       outline: none;
+    }
+    
+    /* Remove any horizontal rules or dividers */
+    hr, .divider, .horizontal-line {
+      display: none !important;
+    }
+    
+    /* Ensure no borders on content containers */
+    .ProseMirror > *, .ProseMirror-content > * {
+      border: none !important;
+      border-bottom: none !important;
+      border-top: none !important;
     }
     
     /* Base blockquote styling (themes can override) */

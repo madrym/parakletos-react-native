@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BibleResult } from '../utils/bible';
 
 interface BibleVersePreviewProps {
-  reference: string;
+  reference: string | undefined;
   onInsert: (result: BibleResult) => void;
   onClose: () => void;
   bibleResult?: BibleResult;
@@ -27,8 +27,8 @@ interface BibleVersePreviewProps {
 }
 
 // Set a fixed maximum height for the verse content
-const MAX_CONTENT_HEIGHT = 200; // Default height for verse content
-const MAX_PREVIEW_HEIGHT = Dimensions.get('window').height * 0.3; // 30% of screen height
+const MAX_CONTENT_HEIGHT = 180; // Reduced height for verse content (was 200)
+const MAX_PREVIEW_HEIGHT = Dimensions.get('window').height * 0.28; // Reduced from 0.3 to 0.28 of screen height
 
 /**
  * Component to display a preview of Bible verses with options to insert or cancel
@@ -78,7 +78,7 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
         </TouchableOpacity>
       </View>
       
-      {/* Scrollable content area - Takes remaining space */}
+      {/* Scrollable content area - Takes remaining space with fixed height */}
       <View style={styles.scrollableWrapper}>
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -96,6 +96,7 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
             contentContainerStyle={styles.versesContainer}
             showsVerticalScrollIndicator={true}
             indicatorStyle="black"
+            alwaysBounceVertical={false}
           >
             {bibleResult.verses.map((verse) => (
               <View key={verse.verse} style={styles.verseRow}>
@@ -115,7 +116,7 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
         )}
       </View>
       
-      {/* Footer with insert button - Always visible */}
+      {/* Footer with insert button - Always visible at bottom */}
       <View style={[styles.actionsContainer, { 
         borderTopColor: `${theme.header}40`,
         backgroundColor: `${theme.background}F0` 
@@ -128,7 +129,7 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
           onPress={() => {
             // *** Add Log ***
             console.log('[BibleVersePreview] Insert button pressed. Has result:', hasResult);
-            if (hasResult && bibleResult) { // Check bibleResult again just in case
+            if (hasResult && bibleResult) {
               onInsert(bibleResult);
             }
           }}
@@ -148,11 +149,11 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    margin: 10,
+    margin: 8, // Reduced from 10
     borderRadius: 8,
     borderWidth: 1,
     overflow: 'hidden',
-    height: 240, // Reduced from 400px to 240px (60 + 120 + 60)
+    maxHeight: MAX_PREVIEW_HEIGHT,
     flexDirection: 'column',
     ...Platform.select({
       ios: {
@@ -170,9 +171,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    height: 60, // Fixed height
+    paddingHorizontal: 14, // Reduced from 16
+    paddingVertical: 10, // Reduced from 12
+    minHeight: 50, // Reduced from 60
   },
   headerText: {
     fontSize: 16,
@@ -189,16 +190,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scrollableWrapper: {
-    flex: 1, // Takes remaining space
-    height: 120, // Reduced from 280px to 120px (2x header height)
+    flexGrow: 1,
+    flexShrink: 1,
+    maxHeight: MAX_CONTENT_HEIGHT,
   },
   versesScrollView: {
     width: '100%',
   },
   versesContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: 16,
+    paddingHorizontal: 14, // Reduced from 16
+    paddingVertical: 10, // Reduced from 12
+    paddingBottom: 14, // Reduced from 16
   },
   verseRow: {
     flexDirection: 'row',
@@ -247,9 +249,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 12,
+    padding: 10, // Reduced from 12
     borderTopWidth: 1,
-    height: 60, // Fixed height
+    height: 50, // Reduced from 60
   },
   insertButton: {
     flexDirection: 'row',

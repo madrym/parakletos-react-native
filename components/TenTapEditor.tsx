@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef, useCallback } from 'react';
 import {
   SafeAreaView,
   View,
@@ -9,7 +9,12 @@ import {
   useWindowDimensions,
   Keyboard,
   UIManager,
-  Text
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  Animated
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
@@ -31,6 +36,8 @@ import useBibleVerseEditorIntegration from '../hooks/useBibleVerseEditorIntegrat
 import BibleVersePreview from './BibleVersePreview'; // Import Preview component
 import BibleReferenceModal from './BibleReferenceModal'; // Import Modal component
 import { BibleResult } from '../utils/bible'; // Import BibleResult type
+import EditorToolbar from './EditorToolbar'; // Import EditorToolbar component
+import { saveToolbarHeight, getToolbarHeight, saveBottomPadding, getBottomPadding } from '../utils/storage';
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === 'android') {
@@ -385,25 +392,64 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
   } = props;
 
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(themeId);
+  const { top } = useSafeAreaInsets();
   const { bottom } = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+  const headerHeight = isLandscape ? 32 : 44;
+  const keyboardVerticalOffset = headerHeight + top;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const editorContainerRef = useRef<View>(null);
+  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [showVersePreview, setShowVersePreview] = useState(true);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [customToolbarHeight, setCustomToolbarHeight] = useState(50); // Default will be updated from storage
+  const [customBottomPadding, setCustomBottomPadding] = useState(25); // Default for bottom padding
   
-  // Keyboard listeners
+  // Load saved settings on component mount
   useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
-      () => {
-        setKeyboardVisible(true);
+    const loadSavedSettings = async () => {
+      const savedHeight = await getToolbarHeight();
+      const savedPadding = await getBottomPadding();
+      setCustomToolbarHeight(savedHeight);
+      setCustomBottomPadding(savedPadding);
+    };
+    
+    loadSavedSettings();
+  }, []);
+
+  // Enhanced keyboard listeners with platform-specific handling
+  useEffect(() => {
+    // Platform-specific keyboard event names
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    
+    // Keyboard show handler
+    const handleKeyboardShow = (event: any) => {
+      const keyboardFrame = event.endCoordinates;
+      const keyboardHeight = keyboardFrame.height;
+      
+      setKeyboardVisible(true);
+      setKeyboardHeight(keyboardHeight);
+      
+      // For Android, ensure content is visible
+      if (Platform.OS === 'android') {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 50);
       }
-    );
-    const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
-      () => {
-        setKeyboardVisible(false);
-      }
-    );
+    };
+    
+    // Keyboard hide handler
+    const handleKeyboardHide = () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    };
+    
+    // Add listeners
+    const keyboardDidShowListener = Keyboard.addListener(showEvent, handleKeyboardShow);
+    const keyboardDidHideListener = Keyboard.addListener(hideEvent, handleKeyboardHide);
 
     return () => {
       keyboardDidShowListener.remove();
@@ -480,57 +526,101 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
 
   // Call the Bible Verse Integration Hook
   const {
-    openReferenceModal, 
-    modalVisible, 
-    closeReferenceModal, 
-    insertVerseAtCursor, // Use insertVerseAtCursor directly now
-    detectedReference, 
-    bibleResult, 
-    loading, 
-    error, 
-    clearDetection, // Need clearDetection for Preview onClose
+    detectedReference: hookDetectedReference,
+    bibleResult: hookBibleResult,
+    loading: hookLoading,
+    error: hookError,
+    detectionEnabled: hookDetectionEnabled,
+    setDetectionEnabled: hookSetDetectionEnabled,
+    modalVisible: hookModalVisible,
+    openReferenceModal,
+    closeReferenceModal,
+    insertVerseAtCursor,
+    insertVerseFromReference,
+    clearDetection,
+    fetchVerses
   } = useBibleVerseEditorIntegration({
-    editor: bridge, 
-    enabled: true, 
+    editor: bridge,
+    enabled: true,
+    debounceMs: 800,
   });
 
-  // *** Calculate Preview Position (Simplified - consider moving to hook or separate util) ***
-  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
-  const editorContainerRef = useRef<View>(null);
-  
-  // Simplified effect to get cursor position when preview should show
+  // Fetch verses when reference is detected
   useEffect(() => {
-    const getCursorPos = async () => {
-      if (bridge && typeof (bridge as any).getSelectionBoundingRect === 'function' && detectedReference) {
-        try {
-          const rect = await (bridge as any).getSelectionBoundingRect();
-          if (rect && editorContainerRef.current) {
-            editorContainerRef.current.measure((_x, _y, _w, _h, pageX, pageY) => {
-              // Basic positioning - might need refinement
-              setCursorPosition({ x: pageX, y: rect.bottom + pageY + 10 }); 
-            });
-          }
-        } catch (e) {
-          console.log("Error getting cursor pos:", e);
-        }
+    if (hookDetectedReference) {
+      console.log('Detected reference, fetching verses:', hookDetectedReference);
+      // Only fetch verses, don't auto-insert
+      fetchVerses(hookDetectedReference);
+    }
+  }, [hookDetectedReference, fetchVerses]);
+
+  // *** Position Calculation ***
+  // Get cursor position for detecting reference
+  const getCursorPos = async () => {
+    if (!bridge || !hookDetectedReference) return;
+    
+    try {
+      const rect = await (bridge as any).getSelectionBoundingRect();
+      
+      // Only continue if we have a valid rect and the ref to the container
+      if (rect && editorContainerRef.current) {
+        editorContainerRef.current.measure((_x, _y, _w, _h, pageX, pageY) => {
+          setCursorPosition({
+            x: pageX + rect.left,
+            y: pageY + rect.bottom + 10 // 10px padding below cursor
+          });
+        });
       }
-    };
+    } catch (e) {
+      console.log("Error getting cursor pos:", e);
+    }
+  };
+
+  // Update cursor position when reference is detected or keyboard changes
+  useEffect(() => {
     getCursorPos();
-  }, [detectedReference, bridge, keyboardVisible]); // Re-check on keyboard visibility
+  }, [hookDetectedReference, bridge, keyboardVisible]); // Re-check on keyboard visibility
 
   // Determine if preview should be shown
-  const showPreview = !!(detectedReference && (bibleResult || loading || error));
+  const showPreview = !!(hookDetectedReference && (hookBibleResult || hookLoading || hookError));
 
-  // Simplified preview positioning logic
-  const getPreviewStyle = () => ({
-    position: 'absolute' as 'absolute',
-    left: 20,
-    right: 20,
-    top: cursorPosition.y, // Use state for position
-    maxWidth: Dimensions.get('window').width - 40,
-    zIndex: 1000,
-    // Add adjustments for keyboard if needed
-  });
+  // Get the combined height of the toolbar and keyboard
+  const getBottomOffset = useCallback(() => {
+    return keyboardVisible ? keyboardHeight : 0;
+  }, [keyboardVisible, keyboardHeight]);
+
+  // Calculate toolbar height with safe area
+  const toolbarHeight = customToolbarHeight + (Platform.OS === 'ios' ? bottom : 0);
+
+  // Handler for toolbar height changes
+  const handleToolbarHeightChange = (height: number) => {
+    setCustomToolbarHeight(height);
+    saveToolbarHeight(height); // Save to persistent storage
+  };
+
+  // Handler for bottom padding changes
+  const handleBottomPaddingChange = (padding: number) => {
+    setCustomBottomPadding(padding);
+    saveBottomPadding(padding); // Save to persistent storage
+  };
+
+  // Improved preview positioning with keyboard awareness
+  const getPreviewStyle = () => {
+    // Get base dimensions
+    const windowHeight = Dimensions.get('window').height;
+    const keyboardOffset = keyboardVisible ? keyboardHeight : 0;
+    const availableHeight = windowHeight - toolbarHeight - keyboardOffset - 20; // 20px additional spacing
+    
+    // Calculate optimal position relative to visible area
+    return {
+      position: 'absolute' as 'absolute',
+      left: 20,
+      right: 20,
+      maxHeight: Math.min(280, availableHeight * 0.4), // 40% of available height, max 280px
+      bottom: keyboardVisible ? keyboardHeight + toolbarHeight + 5 : toolbarHeight + 5, // Position above toolbar with 5px margin
+      zIndex: 2000, // Ensure it's above everything else
+    };
+  };
   // *** End Preview Position Calculation ***
 
   // Add Bible button to toolbar
@@ -640,67 +730,98 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
   
   const isEditorReady = bridge !== null;
   const currentAppTheme = getCurrentTheme(); // Get current theme object
+  
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Scroll handling logic
+  }, []);
 
   return (
     <View style={styles.mainContainer} ref={editorContainerRef}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoidingContainer}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 60}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.container}
+        keyboardVerticalOffset={keyboardVerticalOffset}
       >
-        <SafeAreaView style={[styles.container, { backgroundColor: getBackgroundColor() }]}>
-          <View style={[styles.editorContainer, { backgroundColor: getBackgroundColor() }]}>
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          scrollEventThrottle={16}
+          onScroll={handleScroll}
+          contentContainerStyle={[
+            styles.scrollViewContent,
+            { paddingBottom: toolbarHeight + customBottomPadding } // Use custom bottom padding
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={[styles.editorContainer, { 
+            backgroundColor: getBackgroundColor(),
+            flex: 1,
+            borderBottomWidth: 0 // Ensure no bottom border
+          }]}>
+            {hookLoading && !keyboardVisible && (
+              <View style={styles.loadingOverlay}>
+                <Text style={[styles.loadingText, { color: getTextColor() }]}>Loading...</Text>
+              </View>
+            )}
             <RichText
               editor={bridge}
-              style={[styles.editor, { backgroundColor: getBackgroundColor() }]}
+              style={[styles.editor, { 
+                backgroundColor: getBackgroundColor(),
+                borderWidth: 0, // Ensure no borders
+                flex: 1,
+                paddingBottom: 50 // Add padding to ensure content doesn't go under toolbar
+              }]}
             />
           </View>
-            
-          <View style={[
-            styles.toolbarWrapper, 
-            { 
-              borderTopColor: '#DDD',
-              backgroundColor: getBackgroundColor(),
-              paddingBottom: Platform.OS === 'android' ? (keyboardVisible ? 35 : 0) : 0,
-              bottom: Platform.OS === 'android' ? 0 : undefined,
-              zIndex: 1000,
-              elevation: 5, // Add Android elevation for better stacking
-            }
-          ]}>
-            <Toolbar
-              editor={bridge}
-              items={toolbarItemsWithBible}
+          
+          {/* Bible verse preview */}
+          {showVersePreview && !hookModalVisible && hookDetectedReference && (
+            <BibleVersePreview
+              reference={hookDetectedReference}
+              bibleResult={hookBibleResult}
+              loading={hookLoading}
+              error={hookError}
+              onInsert={insertVerseAtCursor}
+              onClose={() => setShowVersePreview(false)}
+              theme={{
+                background: getCurrentTheme().editorBackground,
+                text: getCurrentTheme().text,
+                header: getCurrentTheme().header
+              }}
             />
-          </View>
-        </SafeAreaView>
-      </KeyboardAvoidingView>
-      
-      {/* Render Bible Verse Preview */} 
-      {showPreview && isEditorReady && (
-        <View style={getPreviewStyle()}>
-          <BibleVersePreview
-            reference={detectedReference || ''}
-            bibleResult={bibleResult}
-            loading={loading}
-            error={error}
-            // Use insertVerseAtCursor directly for node insertion
-            onInsert={(result: BibleResult) => insertVerseAtCursor(result)}
-            onClose={clearDetection} // Use clearDetection from hook
-            theme={currentAppTheme} // Pass theme object
+          )}
+        </ScrollView>
+        
+        {/* Keyboard avoiding toolbar */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidingToolbar}
+          keyboardVerticalOffset={keyboardVerticalOffset}
+        >
+          <EditorToolbar
+            editor={bridge}
+            detectionEnabled={hookDetectionEnabled}
+            setDetectionEnabled={hookSetDetectionEnabled}
+            onInsertVerse={openReferenceModal}
+            onChangeToolbarHeight={handleToolbarHeightChange}
+            onChangeBottomPadding={handleBottomPaddingChange}
+            initialHeight={customToolbarHeight}
+            initialBottomPadding={customBottomPadding}
           />
-        </View>
-      )}
-      
-      {/* Render Bible Reference Modal */} 
-      {isEditorReady && (
+        </KeyboardAvoidingView>
+        
+        {/* Reference modal */}
         <BibleReferenceModal
-          visible={modalVisible} // Use modalVisible from hook
-          onClose={closeReferenceModal} // Use closeReferenceModal from hook
-          // Use insertVerseAtCursor directly for node insertion
-          onInsert={(result: BibleResult) => insertVerseAtCursor(result)}
-          theme={currentAppTheme} // Pass theme object
+          visible={hookModalVisible}
+          onClose={closeReferenceModal}
+          onInsert={(result) => {
+            // Convert from BibleResult to string if needed
+            if (typeof insertVerseFromReference === 'function') {
+              insertVerseFromReference(result.formattedReference);
+            }
+          }}
         />
-      )}
+      </KeyboardAvoidingView>
     </View>
   );
 });
@@ -710,26 +831,55 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative'
   },
-  keyboardAvoidingContainer: {
-    flex: 1,
-  },
   container: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
   },
+  scrollView: {
+    flex: 1,
+  },
+  scrollViewContent: {
+    flexGrow: 1,
+    paddingBottom: 50, // Add padding to ensure content is visible above toolbar
+  },
   editorContainer: {
     flex: 1,
     paddingLeft: 20,
     paddingRight: 20,
+    borderWidth: 0 // Ensure no border
   },
   editor: {
     flex: 1,
+    borderWidth: 0, // Ensure no border
+    minHeight: '100%',
   },
-  toolbarWrapper: {
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  keyboardAvoidingToolbar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     width: '100%',
-    borderTopWidth: 1,
-    minHeight: 50,
+    zIndex: 1000,
+    ...Platform.select({
+      android: {
+        paddingBottom: 20, // Add padding for Android to ensure visibility above keyboard
+      }
+    }),
   },
   modalPlaceholder: {
     position: 'absolute',

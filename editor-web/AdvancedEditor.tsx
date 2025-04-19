@@ -24,6 +24,33 @@ declare global {
   }
 }
 
+// Custom CSS to remove dividers and ensure full scrolling
+const customStyles = `
+  .ProseMirror {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    min-height: 100%;
+  }
+  
+  /* Remove any horizontal dividers */
+  hr, .divider, .ProseMirror-separator, .horizontal-line {
+    display: none !important;
+  }
+  
+  /* Ensure no borders on ProseMirror or its content */
+  .ProseMirror * {
+    border-top: none !important;
+    border-bottom: none !important;
+  }
+  
+  /* Ensure the editor content flows without interruption */
+  .ProseMirror-content {
+    border: none !important;
+    outline: none !important;
+  }
+`;
+
 /**
  * This component renders the Tiptap editor within the WebView.
  * It initializes the editor with necessary bridges and extensions.
@@ -44,6 +71,11 @@ export const AdvancedEditor = () => {
       onBeforeCreate: () => console.log('[Editor Web] Tiptap onBeforeCreate'),
       onCreate: ({ editor }: { editor: Editor }) => {
         console.log('!!!!!!!!!!!!!!!!!!!!!! [Editor Web] onCreate START !!!!!!!!!!!!!!!!!!!!!!');
+
+        // Inject custom CSS to remove dividers
+        const styleElement = document.createElement('style');
+        styleElement.textContent = customStyles;
+        document.head.appendChild(styleElement);
 
         // Define the global function INSIDE onCreate
         window.myApp_insertBibleVerse = (payloadString: string) => {
@@ -93,6 +125,7 @@ export const AdvancedEditor = () => {
       editor={editor}
       // Apply dynamic height class if the window flag is set
       className={window.dynamicHeight ? 'dynamic-height' : undefined}
+      style={{ border: 'none', outline: 'none' }} // Additional inline style to ensure no borders
     />
   );
 }; 
