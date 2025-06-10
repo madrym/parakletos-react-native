@@ -1,129 +1,46 @@
 import * as SQLite from 'expo-sqlite';
-import bibleData from '../../../data/NIV.json';
-import { BibleResult, DatabaseInterface, parseReference } from './types';
+import bibleDataRaw from '../../../data/NIV_bible.json';
+import { BibleResult, DatabaseInterface } from './types';
+import { parseReference } from '../../../utils/bible';
 
-interface SQLiteRows {
-    length: number;
-    item: (index: number) => any;
-}
-
-interface SQLiteResultSet {
-    rows: SQLiteRows;
-    insertId?: number;
-    rowsAffected: number;
-}
-
-interface SQLiteTransaction {
-    executeSql: (
-        sqlStatement: string,
-        args?: any[],
-        callback?: (transaction: SQLiteTransaction, resultSet: SQLiteResultSet) => void,
-        errorCallback?: (transaction: SQLiteTransaction, error: Error) => boolean
-    ) => void;
-}
-
-interface SQLiteDatabase {
-    transaction: (
-        callback: (transaction: SQLiteTransaction) => void,
-        errorCallback?: (error: Error) => void,
-        successCallback?: () => void
-    ) => void;
-}
+// Type the imported data properly
+const bibleData = bibleDataRaw as Record<string, Record<string, Record<string, string>>>;
 
 class NativeDatabase implements DatabaseInterface {
-    private db: SQLiteDatabase | null = null;
-
-    private getDB(): SQLiteDatabase {
-        if (!this.db) {
-            try {
-                this.db = SQLite.openDatabaseSync('bible.db') as unknown as SQLiteDatabase;
-            } catch (error) {
-                console.error('Error opening database:', error);
-                throw error;
-            }
-        }
-        return this.db;
-    }
+    private db: SQLite.SQLiteDatabase | null = null;
 
     async initialize(): Promise<void> {
+        console.log('Initializing native database...');
         return new Promise<void>((resolve, reject) => {
             try {
-                const db = this.getDB();
-                if (!db) {
-                    throw new Error('Failed to open database');
+                const db = SQLite.openDatabaseSync('bible.db');
+                this.db = db;
+
+                // Create verses table
+                db.execSync(`
+                    CREATE TABLE IF NOT EXISTS verses (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        book TEXT NOT NULL,
+                        chapter INTEGER NOT NULL,
+                        verse INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        UNIQUE(book, chapter, verse)
+                    )
+                `);
+
+                // Check if verses table is empty
+                const result = db.getFirstSync('SELECT COUNT(*) as count FROM verses') as { count: number } | null;
+                const count = result?.count || 0;
+                
+                if (count === 0) {
+                    console.log('Bible database is empty. Importing data...');
+                    this.importBibleData();
+                    console.log('Bible data import completed.');
+                } else {
+                    console.log(`Bible database already has ${count} verses.`);
                 }
-
-                db.transaction((tx: SQLiteTransaction) => {
-                    // Create verses table
-                    tx.executeSql(
-                        `CREATE TABLE IF NOT EXISTS verses (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            book TEXT NOT NULL,
-                            chapter INTEGER NOT NULL,
-                            verse INTEGER NOT NULL,
-                            text TEXT NOT NULL
-                        );`,
-                        [],
-                        () => {},
-                        (tx: SQLiteTransaction, error: Error) => {
-                            console.error('Error creating verses table:', error);
-                            return false;
-                        }
-                    );
-
-                    // Create cache table
-                    tx.executeSql(
-                        `CREATE TABLE IF NOT EXISTS verse_cache (
-                            reference TEXT PRIMARY KEY,
-                            result TEXT NOT NULL,
-                            timestamp INTEGER NOT NULL
-                        );`,
-                        [],
-                        () => {},
-                        (tx: SQLiteTransaction, error: Error) => {
-                            console.error('Error creating cache table:', error);
-                            return false;
-                        }
-                    );
-
-                    // Check if verses table is empty
-                    tx.executeSql(
-                        'SELECT COUNT(*) as count FROM verses;',
-                        [],
-                        (tx: SQLiteTransaction, result: SQLiteResultSet) => {
-                            const count = result.rows.item(0).count as number;
-                            if (count === 0) {
-                                // Import data from NIV.json
-                                bibleData.forEach(book => {
-                                    book.chapters.forEach(chapter => {
-                                        chapter.verses.forEach(verse => {
-                                            tx.executeSql(
-                                                'INSERT INTO verses (book, chapter, verse, text) VALUES (?, ?, ?, ?);',
-                                                [book.book, chapter.chapter, verse.verse, verse.text],
-                                                () => {},
-                                                (tx: SQLiteTransaction, error: Error) => {
-                                                    console.error('Error inserting verse:', error);
-                                                    return false;
-                                                }
-                                            );
-                                        });
-                                    });
-                                });
-                            }
-                        },
-                        (tx: SQLiteTransaction, error: Error) => {
-                            console.error('Error checking verses table:', error);
-                            return false;
-                        }
-                    );
-                },
-                (error: Error) => {
-                    console.error('Transaction error:', error);
-                    reject(error);
-                },
-                () => {
-                    resolve();
-                });
+                
+                resolve();
             } catch (error) {
                 console.error('Database initialization error:', error);
                 reject(error);
@@ -131,97 +48,98 @@ class NativeDatabase implements DatabaseInterface {
         });
     }
 
-    async getVerses(reference: string): Promise<BibleResult> {
-        return new Promise((resolve, reject) => {
-            try {
-                const db = this.getDB();
-                if (!db) {
-                    throw new Error('Database not initialized');
-                }
+    private importBibleData(): void {
+        if (!this.db) {
+            throw new Error('Database not initialized');
+        }
 
-                const parsed = parseReference(reference);
-                if (!parsed) {
-                    throw new Error('Invalid reference format');
-                }
+        try {
+            let totalImported = 0;
+            const totalBooks = Object.keys(bibleData).length;
 
-                db.transaction((tx: SQLiteTransaction) => {
-                    // Check cache first
-                    tx.executeSql(
-                        'SELECT result FROM verse_cache WHERE reference = ? AND timestamp > ?',
-                        [reference, Date.now() - 24 * 60 * 60 * 1000], // 24 hour cache
-                        (tx: SQLiteTransaction, result: SQLiteResultSet) => {
-                            if (result.rows.length > 0) {
-                                resolve(JSON.parse(result.rows.item(0).result));
-                                return;
-                            }
+            console.log(`Starting import of ${totalBooks} books...`);
 
-                            // If not in cache, query the verses
-                            let query = 'SELECT verse, text FROM verses WHERE book = ? AND chapter = ?';
-                            let params: (string | number)[] = [parsed.book, parsed.chapter];
-
-                            if (parsed.startVerse) {
-                                if (parsed.endVerse) {
-                                    query += ' AND verse BETWEEN ? AND ?';
-                                    params.push(parsed.startVerse, parsed.endVerse);
-                                } else {
-                                    query += ' AND verse = ?';
-                                    params.push(parsed.startVerse);
-                                }
-                            }
-
-                            query += ' ORDER BY verse';
-
-                            tx.executeSql(
-                                query,
-                                params,
-                                (tx: SQLiteTransaction, versesResult: SQLiteResultSet) => {
-                                    const verses = [];
-                                    for (let i = 0; i < versesResult.rows.length; i++) {
-                                        verses.push(versesResult.rows.item(i));
-                                    }
-
-                                    const result: BibleResult = {
-                                        formattedReference: `${parsed.book} ${parsed.chapter}${
-                                            parsed.startVerse ? `:${parsed.startVerse}${
-                                                parsed.endVerse ? `-${parsed.endVerse}` : ''
-                                            }` : ''
-                                        }`,
-                                        verses
-                                    };
-
-                                    // Cache the result
-                                    tx.executeSql(
-                                        'INSERT OR REPLACE INTO verse_cache (reference, result, timestamp) VALUES (?, ?, ?)',
-                                        [reference, JSON.stringify(result), Date.now()],
-                                        () => {},
-                                        (tx: SQLiteTransaction, error: Error) => {
-                                            console.error('Error caching result:', error);
-                                            return false;
-                                        }
-                                    );
-
-                                    resolve(result);
-                                },
-                                (tx: SQLiteTransaction, error: Error) => {
-                                    console.error('Error querying verses:', error);
-                                    reject(error);
-                                    return false;
-                                }
+            for (const [bookName, chapters] of Object.entries(bibleData)) {
+                for (const [chapterNum, verses] of Object.entries(chapters)) {
+                    for (const [verseNum, verseText] of Object.entries(verses)) {
+                        try {
+                            this.db.runSync(
+                                'INSERT OR REPLACE INTO verses (book, chapter, verse, text) VALUES (?, ?, ?, ?)',
+                                [bookName, parseInt(chapterNum), parseInt(verseNum), verseText]
                             );
-                        },
-                        (tx: SQLiteTransaction, error: Error) => {
-                            console.error('Error checking cache:', error);
-                            reject(error);
-                            return false;
+                            totalImported++;
+                        } catch (error) {
+                            console.error(`Error importing verse ${bookName} ${chapterNum}:${verseNum}:`, error);
                         }
-                    );
-                });
-            } catch (error) {
-                console.error('Error in getVerses:', error);
-                reject(error);
+                    }
+                }
             }
-        });
+            
+            console.log(`Bible data import completed. Total verses imported: ${totalImported}`);
+        } catch (error) {
+            console.error('Error during Bible data import:', error);
+            throw error;
+        }
+    }
+
+    async getVerses(reference: string): Promise<BibleResult> {
+        if (!this.db) {
+            throw new Error('Database not initialized');
+        }
+
+        const { book, chapter, startVerse, endVerse } = parseReference(reference);
+
+        let sql = 'SELECT verse, text FROM verses WHERE book = ? AND chapter = ?';
+        let params: any[] = [book, chapter];
+
+        if (startVerse !== undefined) {
+            if (endVerse !== undefined && endVerse !== startVerse) {
+                sql += ' AND verse BETWEEN ? AND ?';
+                params.push(startVerse, endVerse);
+            } else {
+                sql += ' AND verse = ?';
+                params.push(startVerse);
+            }
+        }
+
+        sql += ' ORDER BY verse';
+
+        try {
+            const rows = this.db.getAllSync(sql, params);
+            const verses = rows.map((row: any) => ({
+                verse: row.verse,
+                text: row.text
+            }));
+
+            if (verses.length === 0) {
+                throw new Error(`No verses found for reference: ${reference}`);
+            }
+
+            // Format the reference string nicely
+            let formattedReference = `${book} ${chapter}`;
+            if (startVerse !== undefined) {
+                formattedReference += `:${startVerse}`;
+                if (endVerse !== undefined && endVerse !== startVerse) {
+                    formattedReference += `-${endVerse}`;
+                }
+            }
+
+            return {
+                formattedReference,
+                verses,
+                book,
+                chapter,
+                startVerse,
+                endVerse
+            };
+        } catch (error) {
+            console.error('SQL error:', error);
+            throw error;
+        }
     }
 }
 
-export const database = new NativeDatabase();
+export const nativeDatabase = new NativeDatabase();
+
+// Export as database for platform-specific resolution
+export const database = nativeDatabase;

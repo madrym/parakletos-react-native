@@ -12,6 +12,7 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   NativeSyntheticEvent,
   NativeScrollEvent,
   Animated
@@ -36,8 +37,9 @@ import useBibleVerseEditorIntegration from '../hooks/useBibleVerseEditorIntegrat
 import BibleVersePreview from './BibleVersePreview'; // Import Preview component
 import BibleReferenceModal from './BibleReferenceModal'; // Import Modal component
 import { BibleResult } from '../utils/bible'; // Import BibleResult type
-import EditorToolbar from './EditorToolbar'; // Import EditorToolbar component
-import { saveToolbarHeight, getToolbarHeight, saveBottomPadding, getBottomPadding } from '../utils/storage';
+// import EditorToolbar from './EditorToolbar'; // Import EditorToolbar component
+// import { saveToolbarHeight, getToolbarHeight, saveBottomPadding, getBottomPadding } from '../utils/storage';
+import { Ionicons } from '@expo/vector-icons';
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === 'android') {
@@ -337,11 +339,14 @@ interface TenTapEditorProps {
   initialContent?: string;
   themeId?: ThemeId;
   onContentChange?: (html: string) => void;
+  toolbarHeight?: number;
+  toolbarBottomPadding?: number;
 }
 
 export interface TenTapEditorRef {
   updateTheme: (newThemeId: ThemeId) => void;
   getEditor: () => any;
+  focus: () => void;
 }
 
 // JavaScript to handle Bible verse toggling
@@ -389,6 +394,8 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
     initialContent = '', // Add default initial content
     themeId = THEME_IDS.NATURE,
     onContentChange,
+    toolbarHeight = 50,
+    toolbarBottomPadding = 25,
   } = props;
 
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(themeId);
@@ -404,20 +411,14 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
   const [showVersePreview, setShowVersePreview] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
-  const [customToolbarHeight, setCustomToolbarHeight] = useState(50); // Default will be updated from storage
-  const [customBottomPadding, setCustomBottomPadding] = useState(25); // Default for bottom padding
+  const [customToolbarHeight, setCustomToolbarHeight] = useState(toolbarHeight);
+  const [customBottomPadding, setCustomBottomPadding] = useState(toolbarBottomPadding);
   
-  // Load saved settings on component mount
+  // Update local state when props change
   useEffect(() => {
-    const loadSavedSettings = async () => {
-      const savedHeight = await getToolbarHeight();
-      const savedPadding = await getBottomPadding();
-      setCustomToolbarHeight(savedHeight);
-      setCustomBottomPadding(savedPadding);
-    };
-    
-    loadSavedSettings();
-  }, []);
+    setCustomToolbarHeight(toolbarHeight);
+    setCustomBottomPadding(toolbarBottomPadding);
+  }, [toolbarHeight, toolbarBottomPadding]);
 
   // Enhanced keyboard listeners with platform-specific handling
   useEffect(() => {
@@ -461,7 +462,7 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
   const bridge = useEditorBridge({
     customSource: editorHtml, // Use the custom built HTML
     theme: getThemeConfig(currentThemeId),
-    autofocus: false,
+    autofocus: true, // Enable autofocus to ensure proper mobile keyboard behavior
     avoidIosKeyboard: false, // Turn this off as we're handling it with KeyboardAvoidingView
     initialContent: initialContent, // Pass initial content
     bridgeExtensions: [
@@ -510,6 +511,39 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
         extendExtension: () => null,
         configureTiptapExtensionsOnRunTime: () => null
       } as unknown as BridgeExtension<any, any, any>,
+      // Add custom bridge extension for enhanced mobile input handling
+      {
+        name: 'mobile-input-enhancement',
+        configureCSS: () => {
+          return `
+            .ProseMirror {
+              -webkit-user-select: text !important;
+              user-select: text !important;
+              -webkit-touch-callout: default !important;
+              -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important;
+              touch-action: manipulation !important;
+              cursor: text !important;
+            }
+            
+            .ProseMirror:focus {
+              outline: none !important;
+              border: none !important;
+            }
+            
+            /* Ensure text inputs are properly styled for mobile */
+            input[type="text"], textarea, .ProseMirror {
+              font-size: 16px !important; /* Prevents zoom on iOS */
+              line-height: 1.4 !important;
+            }
+          `;
+        },
+        // Add missing required methods
+        clone: () => null,
+        configureExtension: () => null,
+        onMessage: () => null,
+        extendExtension: () => null,
+        configureTiptapExtensionsOnRunTime: () => null
+      } as unknown as BridgeExtension<any, any, any>,
       // Add custom bridge extension for Bible verse interaction (if needed)
       // Note: The NodeView now handles clicks, so this might be redundant unless
       // you need other JS interactions from the web side.
@@ -542,7 +576,6 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
   } = useBibleVerseEditorIntegration({
     editor: bridge,
     enabled: true,
-    debounceMs: 800,
   });
 
   // Fetch verses when reference is detected
@@ -554,35 +587,88 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
     }
   }, [hookDetectedReference, fetchVerses]);
 
+  // *** Add debugging logs for the hook data ***
+  useEffect(() => {
+    console.log('[TenTapEditor] Hook state update:', {
+      detectedReference: hookDetectedReference,
+      bibleResult: hookBibleResult,
+      loading: hookLoading,
+      error: hookError,
+      hasVerses: hookBibleResult?.verses?.length || 0
+    });
+  }, [hookDetectedReference, hookBibleResult, hookLoading, hookError]);
+
   // *** Position Calculation ***
   // Get cursor position for detecting reference
-  const getCursorPos = async () => {
+  const getCursorPos = useCallback(async () => {
     if (!bridge || !hookDetectedReference) return;
     
     try {
-      const rect = await (bridge as any).getSelectionBoundingRect();
+      // Enable basic positioning - we'll position the toolbar without precise cursor coordinates
+      // This allows the Bible verse detection to work properly
+      console.log('Bible reference detected, calculating basic position');
       
-      // Only continue if we have a valid rect and the ref to the container
-      if (rect && editorContainerRef.current) {
-        editorContainerRef.current.measure((_x, _y, _w, _h, pageX, pageY) => {
-          setCursorPosition({
-            x: pageX + rect.left,
-            y: pageY + rect.bottom + 10 // 10px padding below cursor
-          });
-        });
-      }
+      // Only set cursor position if it hasn't been set or if it's different
+      // This prevents infinite loops from setCursorPosition triggering re-renders
+      setCursorPosition(prev => {
+        const newPosition = {
+          x: 20, // Default left margin
+          y: 100 // Default top position
+        };
+        
+        // Only update if position actually changed
+        if (prev.x !== newPosition.x || prev.y !== newPosition.y) {
+          return newPosition;
+        }
+        return prev;
+      });
+      
+      // TODO: Future enhancement - implement precise cursor position detection
+      // when TenTap editor provides the necessary bridge methods
+      // const rect = await (bridge as any).getSelectionBoundingRect();
+      // 
+      // // Only continue if we have a valid rect and the ref to the container
+      // if (rect && editorContainerRef.current) {
+      //   editorContainerRef.current.measure((_x, _y, _w, _h, pageX, pageY) => {
+      //     setCursorPosition({
+      //       x: pageX + rect.left,
+      //       y: pageY + rect.bottom + 10 // 10px padding below cursor
+      //     });
+      //   });
+      // }
     } catch (e) {
       console.log("Error getting cursor pos:", e);
     }
-  };
+  }, [bridge, hookDetectedReference]);
 
   // Update cursor position when reference is detected or keyboard changes
+  // Use a ref to track if we've already calculated position for this reference
+  const lastCalculatedRef = useRef<string | undefined>(undefined);
+  
   useEffect(() => {
-    getCursorPos();
-  }, [hookDetectedReference, bridge, keyboardVisible]); // Re-check on keyboard visibility
+    // Only calculate position if we haven't already done it for this reference
+    if (hookDetectedReference && hookDetectedReference !== lastCalculatedRef.current) {
+      lastCalculatedRef.current = hookDetectedReference;
+      getCursorPos();
+    } else if (!hookDetectedReference) {
+      lastCalculatedRef.current = undefined;
+    }
+  }, [hookDetectedReference, getCursorPos]);
 
-  // Determine if preview should be shown
-  const showPreview = !!(hookDetectedReference && (hookBibleResult || hookLoading || hookError));
+  // Determine if preview should be shown - show whenever we have a detected reference
+  const showPreview = !!(hookDetectedReference);
+
+  console.log('[TenTapEditor] Render state:', {
+    showPreview,
+    hookDetectedReference,
+    hasBibleResult: !!hookBibleResult,
+    bibleResultContent: hookBibleResult ? {
+      formattedReference: hookBibleResult.formattedReference,
+      versesCount: hookBibleResult.verses?.length || 0
+    } : null,
+    hookLoading,
+    hookError
+  });
 
   // Get the combined height of the toolbar and keyboard
   const getBottomOffset = useCallback(() => {
@@ -590,56 +676,58 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
   }, [keyboardVisible, keyboardHeight]);
 
   // Calculate toolbar height with safe area
-  const toolbarHeight = customToolbarHeight + (Platform.OS === 'ios' ? bottom : 0);
+  const finalToolbarHeight = customToolbarHeight + (Platform.OS === 'ios' ? bottom : 0);
 
   // Handler for toolbar height changes
   const handleToolbarHeightChange = (height: number) => {
     setCustomToolbarHeight(height);
-    saveToolbarHeight(height); // Save to persistent storage
   };
 
   // Handler for bottom padding changes
   const handleBottomPaddingChange = (padding: number) => {
     setCustomBottomPadding(padding);
-    saveBottomPadding(padding); // Save to persistent storage
   };
 
-  // Improved preview positioning with keyboard awareness
-  const getPreviewStyle = () => {
-    // Get base dimensions
-    const windowHeight = Dimensions.get('window').height;
-    const keyboardOffset = keyboardVisible ? keyboardHeight : 0;
-    const availableHeight = windowHeight - toolbarHeight - keyboardOffset - 20; // 20px additional spacing
-    
-    // Calculate optimal position relative to visible area
+  // Simple fixed preview positioning - always visible
+  const getFixedPreviewStyle = () => {
     return {
       position: 'absolute' as 'absolute',
-      left: 20,
-      right: 20,
-      maxHeight: Math.min(280, availableHeight * 0.4), // 40% of available height, max 280px
-      bottom: keyboardVisible ? keyboardHeight + toolbarHeight + 5 : toolbarHeight + 5, // Position above toolbar with 5px margin
-      zIndex: 2000, // Ensure it's above everything else
+      left: 10,
+      right: 10,
+      bottom: 120, // Increased from 100 to ensure full preview is visible
+      zIndex: 9999,
+      height: 320, // Fixed height to match component
+      ...Platform.select({
+        ios: {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.25,
+          shadowRadius: 3.84,
+        },
+        android: {
+          elevation: 5,
+        },
+      }),
     };
   };
-  // *** End Preview Position Calculation ***
 
-  // Add Bible button to toolbar
-  const toolbarItemsWithBible: ToolbarItem[] = [
-    ...DEFAULT_TOOLBAR_ITEMS,
-    {
-      name: 'bible',
-      type: 'button',
-      image: () => require('../assets/images/bible.png'),
-      onPress: () => () => {
-        if (bridge && openReferenceModal) {
-          console.log('Toolbar: Opening Bible reference modal...');
-          openReferenceModal(); // Call the function from the hook
-        }
-      },
-      active: () => false,
-      disabled: () => !bridge, // Disable if bridge isn't ready
-    } as unknown as ToolbarItem
-  ];
+  // Add a handler for dismissing the preview when tapping outside
+  const handleOutsideTap = useCallback(() => {
+    if (showPreview) {
+      clearDetection();
+    }
+  }, [showPreview, clearDetection]);
+
+  // Add focus method to help with mobile keyboard
+  const focusEditor = useCallback(async () => {
+    if (bridge) {
+      try {
+        await bridge.focus();
+      } catch (error) {
+        console.log('Error focusing editor:', error);
+      }
+    }
+  }, [bridge]);
 
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
@@ -650,7 +738,8 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
         bridge.injectCSS(getThemeCSS(newThemeId));
       }
     },
-    getEditor: () => bridge
+    getEditor: () => bridge,
+    focus: focusEditor, // Add focus method to ref
   }));
 
   function getThemeConfig(id: ThemeId): RecursivePartial<EditorTheme> {
@@ -742,55 +831,46 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
         style={styles.container}
         keyboardVerticalOffset={keyboardVerticalOffset}
       >
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.scrollView}
-          scrollEventThrottle={16}
-          onScroll={handleScroll}
-          contentContainerStyle={[
-            styles.scrollViewContent,
-            { paddingBottom: toolbarHeight + customBottomPadding } // Use custom bottom padding
-          ]}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={[styles.editorContainer, { 
-            backgroundColor: getBackgroundColor(),
-            flex: 1,
-            borderBottomWidth: 0 // Ensure no bottom border
-          }]}>
-            {hookLoading && !keyboardVisible && (
-              <View style={styles.loadingOverlay}>
-                <Text style={[styles.loadingText, { color: getTextColor() }]}>Loading...</Text>
-              </View>
-            )}
-            <RichText
-              editor={bridge}
-              style={[styles.editor, { 
+        <TouchableWithoutFeedback onPress={handleOutsideTap}>
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            scrollEventThrottle={16}
+            onScroll={handleScroll}
+            contentContainerStyle={[
+              styles.scrollViewContent,
+              { paddingBottom: finalToolbarHeight + customBottomPadding }
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
+            <TouchableWithoutFeedback onPress={focusEditor}>
+              <View style={[styles.editorContainer, { 
                 backgroundColor: getBackgroundColor(),
-                borderWidth: 0, // Ensure no borders
                 flex: 1,
-                paddingBottom: 50 // Add padding to ensure content doesn't go under toolbar
-              }]}
-            />
-          </View>
-          
-          {/* Bible verse preview */}
-          {showVersePreview && !hookModalVisible && hookDetectedReference && (
-            <BibleVersePreview
-              reference={hookDetectedReference}
-              bibleResult={hookBibleResult}
-              loading={hookLoading}
-              error={hookError}
-              onInsert={insertVerseAtCursor}
-              onClose={() => setShowVersePreview(false)}
-              theme={{
-                background: getCurrentTheme().editorBackground,
-                text: getCurrentTheme().text,
-                header: getCurrentTheme().header
-              }}
-            />
-          )}
-        </ScrollView>
+                borderBottomWidth: 0
+              }]}>
+                {hookLoading && !keyboardVisible && (
+                  <View style={styles.loadingOverlay}>
+                    <Text style={[styles.loadingText, { color: getTextColor() }]}>Loading...</Text>
+                  </View>
+                )}
+                <RichText
+                  editor={bridge}
+                  style={[styles.editor, { 
+                    backgroundColor: getBackgroundColor(),
+                    borderWidth: 0,
+                    flex: 1,
+                    paddingBottom: 50
+                  }]}
+                  accessible={true}
+                  accessibilityRole="text"
+                  accessibilityLabel="Note editor"
+                  accessibilityHint="Tap to start writing your note"
+                />
+              </View>
+            </TouchableWithoutFeedback>
+          </ScrollView>
+        </TouchableWithoutFeedback>
         
         {/* Keyboard avoiding toolbar */}
         <KeyboardAvoidingView
@@ -798,16 +878,21 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
           style={styles.keyboardAvoidingToolbar}
           keyboardVerticalOffset={keyboardVerticalOffset}
         >
-          <EditorToolbar
-            editor={bridge}
-            detectionEnabled={hookDetectionEnabled}
-            setDetectionEnabled={hookSetDetectionEnabled}
-            onInsertVerse={openReferenceModal}
-            onChangeToolbarHeight={handleToolbarHeightChange}
-            onChangeBottomPadding={handleBottomPaddingChange}
-            initialHeight={customToolbarHeight}
-            initialBottomPadding={customBottomPadding}
-          />
+          <View style={styles.simpleToolbarContainer}>
+            <View style={styles.toolbarWrapper}>
+              <Toolbar editor={bridge} />
+            </View>
+            <View style={styles.toolbarActions}>
+              <TouchableOpacity 
+                style={styles.bibleToolbarButton}
+                onPress={openReferenceModal}
+                disabled={!bridge}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="book-outline" size={22} color="#0B4619" />
+              </TouchableOpacity>
+            </View>
+          </View>
         </KeyboardAvoidingView>
         
         {/* Reference modal */}
@@ -815,12 +900,28 @@ const TenTapEditor = forwardRef<TenTapEditorRef, TenTapEditorProps>(function Ten
           visible={hookModalVisible}
           onClose={closeReferenceModal}
           onInsert={(result) => {
-            // Convert from BibleResult to string if needed
-            if (typeof insertVerseFromReference === 'function') {
-              insertVerseFromReference(result.formattedReference);
+            if (typeof insertVerseAtCursor === 'function') {
+              insertVerseAtCursor(result);
             }
           }}
         />
+
+        {/* Bible Verse Preview */}
+        {showPreview && (
+          <View style={getFixedPreviewStyle()}>
+            <BibleVersePreview
+              reference={hookDetectedReference}
+              bibleResult={hookBibleResult}
+              loading={hookLoading}
+              error={hookError}
+              onInsert={(result) => {
+                insertVerseAtCursor(result);
+                clearDetection();
+              }}
+              onClose={clearDetection}
+            />
+          </View>
+        )}
       </KeyboardAvoidingView>
     </View>
   );
@@ -847,7 +948,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingLeft: 20,
     paddingRight: 20,
-    borderWidth: 0 // Ensure no border
+    borderWidth: 0, // Ensure no border
+    minHeight: 200, // Ensure minimum height for easier tapping
   },
   editor: {
     flex: 1,
@@ -892,7 +994,33 @@ const styles = StyleSheet.create({
     elevation: 10,
     borderWidth: 1,
     borderColor: '#ccc'
-  }
+  },
+  simpleToolbarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toolbarWrapper: {
+    flex: 1,
+  },
+  toolbarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  bibleToolbarButton: {
+    padding: 10,
+  },
+  detectionToolbarButton: {
+    padding: 10,
+  },
+  detectionDisabled: {
+    opacity: 0.5,
+  },
+  previewContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+  },
 });
 
 export default TenTapEditor; 

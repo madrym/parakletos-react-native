@@ -76,6 +76,7 @@
     "@tiptap/extension-paragraph": "^2.11.7",
     "@tiptap/extension-text": "^2.11.7",
     "@tiptap/react": "^2.11.7",
+    "@types/jest": "^29.5.14",
     "@types/lodash": "^4.17.15",
     "@types/react": "~18.3.12",
     "@types/react-dom": "^18.3.6",

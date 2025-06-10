@@ -19,11 +19,19 @@ import {
   EmitterSubscription,
   LayoutAnimation,
   UIManager,
-  NativeModules
+  NativeModules,
+  Modal
 } from 'react-native';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import TenTapEditor, { TenTapEditorRef } from '../components/TenTapEditor';
+import BibleReferenceModal from '../components/BibleReferenceModal';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { useUser } from '@clerk/clerk-expo';
+import { Id } from '@/convex/_generated/dataModel';
+import { BibleResult } from '../utils/bible';
+import Slider from '@react-native-community/slider';
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === 'android') {
@@ -48,10 +56,166 @@ interface Theme {
 
 // Folder type
 interface Folder {
-  id: string;
+  _id: Id<"folders">;
   name: string;
   emoji: string;
 }
+
+// Toolbar Settings Modal Component
+interface ToolbarSettingsModalProps {
+  visible: boolean;
+  onClose: () => void;
+  theme: Theme;
+  toolbarHeight: number;
+  toolbarBottomPadding: number;
+  onToolbarHeightChange: (height: number) => void;
+  onToolbarBottomPaddingChange: (padding: number) => void;
+}
+
+const ToolbarSettingsModal: React.FC<ToolbarSettingsModalProps> = ({
+  visible,
+  onClose,
+  theme,
+  toolbarHeight,
+  toolbarBottomPadding,
+  onToolbarHeightChange,
+  onToolbarBottomPaddingChange
+}) => {
+  const [toolbarHeightText, setToolbarHeightText] = useState(toolbarHeight.toString());
+  const [bottomPaddingText, setBottomPaddingText] = useState(toolbarBottomPadding.toString());
+
+  // Update text fields when props change
+  useEffect(() => {
+    setToolbarHeightText(toolbarHeight.toString());
+    setBottomPaddingText(toolbarBottomPadding.toString());
+  }, [toolbarHeight, toolbarBottomPadding]);
+
+  const applyToolbarHeight = (height: number) => {
+    const validHeight = Math.min(Math.max(height, 40), 70); // Clamp between 40-70
+    onToolbarHeightChange(validHeight);
+    setToolbarHeightText(validHeight.toString());
+  };
+
+  const applyBottomPadding = (padding: number) => {
+    const validPadding = Math.min(Math.max(padding, 0), 100); // Clamp between 0-100
+    onToolbarBottomPaddingChange(validPadding);
+    setBottomPaddingText(validPadding.toString());
+  };
+
+  const handleToolbarHeightTextChange = (text: string) => {
+    setToolbarHeightText(text);
+    const numValue = parseInt(text, 10);
+    if (!isNaN(numValue) && numValue >= 40 && numValue <= 70) {
+      applyToolbarHeight(numValue);
+    }
+  };
+
+  const handleBottomPaddingTextChange = (text: string) => {
+    setBottomPaddingText(text);
+    const numValue = parseInt(text, 10);
+    if (!isNaN(numValue) && numValue >= 0 && numValue <= 100) {
+      applyBottomPadding(numValue);
+    }
+  };
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.toolbarModalOverlay}>
+        <View style={[styles.toolbarModalContent, { backgroundColor: theme.background }]}>
+          <View style={styles.toolbarModalHeader}>
+            <Text style={[styles.toolbarModalTitle, { color: theme.text }]}>Keyboard Toolbar Settings</Text>
+            <TouchableOpacity 
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="close" size={24} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Toolbar Height */}
+          <View style={styles.toolbarSettingItem}>
+            <Text style={[styles.toolbarSettingLabel, { color: theme.text }]}>Toolbar Height</Text>
+            <Text style={[styles.toolbarSettingHint, { color: theme.text + '80' }]}>
+              Adjust if the toolbar is hidden by your keyboard
+            </Text>
+            
+            <View style={styles.toolbarInputContainer}>
+              <Slider
+                style={styles.toolbarSlider}
+                minimumValue={40}
+                maximumValue={70}
+                step={1}
+                value={toolbarHeight}
+                onValueChange={applyToolbarHeight}
+                minimumTrackTintColor={theme.header}
+                maximumTrackTintColor="#ccc"
+              />
+              <TextInput
+                style={[styles.toolbarNumberInput, { borderColor: theme.header + '40', color: theme.text }]}
+                value={toolbarHeightText}
+                onChangeText={handleToolbarHeightTextChange}
+                keyboardType="number-pad"
+                returnKeyType="done"
+                maxLength={2}
+              />
+            </View>
+            
+            <View style={styles.toolbarSliderLabels}>
+              <Text style={[styles.toolbarSliderLabel, { color: theme.text + '80' }]}>Smaller (40)</Text>
+              <Text style={[styles.toolbarSliderLabel, { color: theme.text + '80' }]}>Larger (70)</Text>
+            </View>
+          </View>
+          
+          {/* Bottom Padding */}
+          <View style={styles.toolbarSettingItem}>
+            <Text style={[styles.toolbarSettingLabel, { color: theme.text }]}>Bottom Padding</Text>
+            <Text style={[styles.toolbarSettingHint, { color: theme.text + '80' }]}>
+              Adjust space between content and toolbar
+            </Text>
+            
+            <View style={styles.toolbarInputContainer}>
+              <Slider
+                style={styles.toolbarSlider}
+                minimumValue={0}
+                maximumValue={100}
+                step={1}
+                value={toolbarBottomPadding}
+                onValueChange={applyBottomPadding}
+                minimumTrackTintColor={theme.header}
+                maximumTrackTintColor="#ccc"
+              />
+              <TextInput
+                style={[styles.toolbarNumberInput, { borderColor: theme.header + '40', color: theme.text }]}
+                value={bottomPaddingText}
+                onChangeText={handleBottomPaddingTextChange}
+                keyboardType="number-pad"
+                returnKeyType="done"
+                maxLength={3}
+              />
+            </View>
+            
+            <View style={styles.toolbarSliderLabels}>
+              <Text style={[styles.toolbarSliderLabel, { color: theme.text + '80' }]}>Less (0)</Text>
+              <Text style={[styles.toolbarSliderLabel, { color: theme.text + '80' }]}>More (100)</Text>
+            </View>
+          </View>
+          
+          <TouchableOpacity 
+            style={[styles.toolbarSaveButton, { backgroundColor: theme.header }]}
+            onPress={onClose}
+          >
+            <Text style={styles.toolbarSaveButtonText}>Save Settings</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 // Theme constants
 const THEMES = {
@@ -344,8 +508,6 @@ interface FolderBottomSheetProps {
   theme: Theme;
 }
 
-const EMOJI_OPTIONS = ['📁', '📔', '📒', '📕', '📗', '📘', '📙', '🗂️', '💼', '🏛️', '🏢', '🏠', '🌳', '🌿', '🔖'];
-
 const FolderBottomSheet: React.FC<FolderBottomSheetProps> = ({
   visible,
   onClose,
@@ -355,67 +517,25 @@ const FolderBottomSheet: React.FC<FolderBottomSheetProps> = ({
   currentFolder,
   theme
 }) => {
-  const translateY = useRef(new Animated.Value(initialHeight)).current;
-  const [folderName, setFolderName] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
   const [selectedEmoji, setSelectedEmoji] = useState('📁');
-  const [isCreatingNew, setIsCreatingNew] = useState(false);
-  const inputRef = useRef<TextInput>(null);
-  
-  useEffect(() => {
-    if (visible) {
-      // Get current screen height at the moment the sheet becomes visible
-      const { height: currentHeight } = Dimensions.get('window');
-      
-      // Reset value if not visible (to prevent weird animation when height changes)
-      translateY.setValue(currentHeight);
-      
-      // Slide up
-      Animated.spring(translateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 100,
-        friction: 8
-      }).start();
-      
-      // Reset creation state when opening
-      setIsCreatingNew(false);
-    } else {
-      // Get current height for closing animation
-      const { height: currentHeight } = Dimensions.get('window');
-      
-      // Slide down
-      Animated.spring(translateY, {
-        toValue: currentHeight,
-        useNativeDriver: true,
-        tension: 100,
-        friction: 8
-      }).start();
-      
-      // Clear input when closed
-      setFolderName('');
-      setSelectedEmoji('📁');
-    }
-  }, [visible]);
 
-  // Handle folder creation
-  const handleCreateFolder = () => {
-    const trimmedName = folderName.trim();
-    if (trimmedName !== '') {
-      onCreateFolder(trimmedName, selectedEmoji);
-      setFolderName('');
-      setSelectedEmoji('📁');
-      setIsCreatingNew(false);
-    }
+  const emojis = ['📁', '📂', '📚', '📖', '📝', '💡', '🔥', '⭐', '🎯', '🚀', '💻', '🏠', '❤️', '🌟', '🎨', '🔒'];
+
+  const resetForm = () => {
+    setNewFolderName('');
+    setSelectedEmoji('📁');
+    setIsCreating(false);
   };
 
-  // Focus input when switching to create mode
-  useEffect(() => {
-    if (isCreatingNew && inputRef.current) {
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
+  const handleCreateFolder = async () => {
+    if (newFolderName.trim()) {
+      await onCreateFolder(newFolderName.trim(), selectedEmoji);
+      resetForm();
+      onClose();
     }
-  }, [isCreatingNew]);
+  };
 
   if (!visible) return null;
 
@@ -425,41 +545,34 @@ const FolderBottomSheet: React.FC<FolderBottomSheetProps> = ({
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
       
-      <Animated.View 
-        style={[
-          styles.bottomSheet,
-          { transform: [{ translateY }] }
-        ]}
-      >
+      <View style={[styles.bottomSheet, { backgroundColor: theme.background }]}>
         <View style={styles.bottomSheetHeader}>
           <Text style={styles.bottomSheetTitle}>
-            {isCreatingNew ? 'Create New Folder' : 'Select Folder'}
+            {isCreating ? 'Create New Folder' : 'Select Folder'}
           </Text>
           <TouchableOpacity onPress={onClose}>
             <Ionicons name="close" size={24} color="#333" />
           </TouchableOpacity>
         </View>
         
-        {isCreatingNew ? (
+        {isCreating ? (
           // Create new folder view
           <View>
             <View style={styles.folderInputContainer}>
               <TextInput
-                ref={inputRef}
                 style={styles.folderInput}
-                value={folderName}
-                onChangeText={setFolderName}
+                value={newFolderName}
+                onChangeText={setNewFolderName}
                 placeholder="Enter folder name"
                 placeholderTextColor="#999"
+                autoFocus={true}
                 returnKeyType="done"
-                onSubmitEditing={handleCreateFolder}
-                autoCapitalize="words"
               />
             </View>
             
             <Text style={styles.emojiSelectorTitle}>Select an emoji</Text>
             <View style={styles.emojiSelector}>
-              {EMOJI_OPTIONS.map((emoji) => (
+              {emojis.map((emoji) => (
                 <TouchableOpacity
                   key={emoji}
                   style={[
@@ -476,21 +589,22 @@ const FolderBottomSheet: React.FC<FolderBottomSheetProps> = ({
             <View style={styles.folderActionButtons}>
               <TouchableOpacity 
                 style={[styles.folderActionButton, styles.cancelButton]}
-                onPress={() => setIsCreatingNew(false)}
+                onPress={() => setIsCreating(false)}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
+              
               <TouchableOpacity 
                 style={[
-                  styles.folderActionButton, 
+                  styles.folderActionButton,
                   styles.createButton,
                   {
-                    backgroundColor: folderName.trim() ? theme.header : '#ccc',
-                    opacity: folderName.trim() ? 1 : 0.7
+                    backgroundColor: newFolderName.trim() ? theme.header : '#ccc',
+                    opacity: newFolderName.trim() ? 1 : 0.7
                   }
                 ]}
                 onPress={handleCreateFolder}
-                disabled={!folderName.trim()}
+                disabled={!newFolderName.trim()}
               >
                 <Text style={styles.createButtonText}>Create</Text>
               </TouchableOpacity>
@@ -518,12 +632,12 @@ const FolderBottomSheet: React.FC<FolderBottomSheetProps> = ({
             
             <FlatList
               data={folders}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item) => item._id.toString()}
               renderItem={({ item }) => (
                 <TouchableOpacity 
                   style={[
                     styles.folderOption,
-                    currentFolder?.id === item.id && styles.selectedFolderOption
+                    currentFolder?._id.toString() === item._id.toString() && styles.selectedFolderOption
                   ]}
                   onPress={() => {
                     onSelectFolder(item);
@@ -532,7 +646,7 @@ const FolderBottomSheet: React.FC<FolderBottomSheetProps> = ({
                 >
                   <Text style={styles.folderEmojiText}>{item.emoji}</Text>
                   <Text style={styles.folderNameText}>{item.name}</Text>
-                  {currentFolder?.id === item.id && (
+                  {currentFolder?._id.toString() === item._id.toString() && (
                     <Ionicons name="checkmark" size={20} color="#0B4619" />
                   )}
                 </TouchableOpacity>
@@ -542,39 +656,78 @@ const FolderBottomSheet: React.FC<FolderBottomSheetProps> = ({
             
             <TouchableOpacity 
               style={styles.createFolderButton}
-              onPress={() => setIsCreatingNew(true)}
+              onPress={() => setIsCreating(true)}
             >
               <Ionicons name="add-circle-outline" size={22} color="#0B4619" />
               <Text style={styles.createFolderText}>Create New Folder</Text>
             </TouchableOpacity>
           </>
         )}
-      </Animated.View>
+      </View>
     </View>
   );
 };
 
 // Mobile friendly editor using 10tap
 export default function MobileFriendlyEditorPage() {
+  // Get URL parameters
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useUser();
+  
+  // Convex queries and mutations
+  const notes = useQuery(api.notes.getNotes, { userId: user?.id || '' });
+  const folders = useQuery(api.notes.getFolders, { userId: user?.id || '' });
+  const createNote = useMutation(api.mutations.createNote);
+  const updateNote = useMutation(api.mutations.updateNote);
+  const createFolder = useMutation(api.mutations.createFolder);
+  
+  // Find the current note if editing an existing one
+  const currentNote = id && notes ? notes.find(note => note._id === id) : null;
+  const isEditingExisting = !!currentNote;
+  
+  // State
   const [currentTheme, setCurrentTheme] = useState<Theme>(THEMES.NATURE);
   const [themeSheetVisible, setThemeSheetVisible] = useState(false);
   const [labelSheetVisible, setLabelSheetVisible] = useState(false);
   const [folderSheetVisible, setFolderSheetVisible] = useState(false);
-  const [title, setTitle] = useState<string>('Untitled Note');
+  const [bibleModalVisible, setBibleModalVisible] = useState(false);
+  const [toolbarSettingsVisible, setToolbarSettingsVisible] = useState(false);
+  const [toolbarHeight, setToolbarHeight] = useState(50);
+  const [toolbarBottomPadding, setToolbarBottomPadding] = useState(25);
+  const [title, setTitle] = useState<string>('');
+  const [content, setContent] = useState<string>('');
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [labels, setLabels] = useState<string[]>([]);
   const [currentFolder, setCurrentFolder] = useState<Folder | null>(null);
-  const [folders, setFolders] = useState<Folder[]>([
-    { id: 'folder1', name: 'Work', emoji: '💼' },
-    { id: 'folder2', name: 'Personal', emoji: '🏠' },
-    { id: 'folder3', name: 'Projects', emoji: '📁' },
-    { id: 'folder4', name: 'Journal', emoji: '📔' },
-    { id: 'folder5', name: 'Ideas', emoji: '💡' }
-  ]);
   const [previouslyUsedLabels, setPreviouslyUsedLabels] = useState<string[]>([
     'Personal', 'Work', 'Ideas', 'Journal', 'To-do', 'Project', 'Research'
   ]);
+  
+  // Load existing note data when component mounts or note changes
+  useEffect(() => {
+    if (currentNote) {
+      setTitle(currentNote.title || 'Untitled Note');
+      setContent(currentNote.content || '');
+      // Load note's folder if it exists
+      if (currentNote.folderId && folders) {
+        const noteFolder = folders.find(f => f._id === currentNote.folderId);
+        if (noteFolder) {
+          setCurrentFolder(noteFolder);
+        }
+      }
+      // Load tags/labels if they exist (assuming they're stored in a tags field)
+      if (currentNote.tags) {
+        setLabels(currentNote.tags);
+      }
+    } else {
+      // New note - set defaults
+      setTitle('Untitled Note');
+      setContent('');
+      setLabels([]);
+      setCurrentFolder(null);
+    }
+  }, [currentNote, folders]);
   
   // Keyboard state
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -693,58 +846,112 @@ export default function MobileFriendlyEditorPage() {
   };
 
   // Create a folder
-  const handleCreateFolder = (name: string, emoji: string) => {
-    // In real app, this would make a call to the Convex backend
-    const newFolder: Folder = {
-      id: `folder_${Date.now()}`, // In real app, this would be created by the backend
-      name,
-      emoji
-    };
+  const handleCreateFolder = async (name: string, emoji: string) => {
+    if (!user) return;
     
-    setFolders([...folders, newFolder]);
-    setCurrentFolder(newFolder);
+    try {
+      // Use Convex mutation to create folder
+      const newFolderId = await createFolder({
+        name,
+        emoji,
+        userId: user.id,
+      });
+      
+      // Set the newly created folder as current
+      // Note: The folder will be available in the next query result
+      // For now, we'll create a temporary folder object
+      const tempFolder: Folder = {
+        _id: newFolderId,
+        name,
+        emoji
+      };
+      setCurrentFolder(tempFolder);
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      Alert.alert('Error', 'Failed to create folder');
+    }
+  };
+
+  // Handle Bible verse insertion
+  const handleBibleVerseInsert = (bibleResult: BibleResult) => {
+    if (!editorRef.current) return;
+    
+    try {
+      // Format the Bible verse(s) for insertion
+      let formattedVerse = `\n\n**${bibleResult.formattedReference}**\n`;
+      bibleResult.verses.forEach(verse => {
+        formattedVerse += `${verse.verse} ${verse.text}\n`;
+      });
+      formattedVerse += '\n';
+      
+      // Get the current editor
+      const editor = editorRef.current.getEditor();
+      if (editor && editor.chain) {
+        // Insert the formatted verse at the current cursor position
+        editor.chain().focus().insertContent(formattedVerse).run();
+      }
+      
+      console.log('Bible verse inserted:', bibleResult.formattedReference);
+    } catch (error) {
+      console.error('Error inserting Bible verse:', error);
+      Alert.alert('Error', 'Failed to insert Bible verse');
+    }
   };
 
   // Add content change handler
   const handleContentChange = (html: string) => {
-    // Store content in state or directly save
+    setContent(html);
     console.log('Content changed, length:', html.length);
   };
 
   // Simple save function with title, labels, and folder
   const saveNote = async () => {
+    if (!user) return;
+    
     try {
       setIsSaving(true);
       
       // Dismiss keyboard when saving
       Keyboard.dismiss();
       
-      // Here you would call your Convex mutation
-      // For now we'll just simulate a save with a timeout
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
       // Get content from editor
-      let content = '';
+      let finalContent = content;
       if (editorRef.current) {
-        // This would be replaced with actual editor content retrieval
-        // content = editorRef.current.getEditor().getHTML();
-        content = '<p>Example content for demo</p>';
+        // Get the latest content from the editor
+        const editor = editorRef.current.getEditor();
+        if (editor && editor.getHTML) {
+          finalContent = editor.getHTML();
+        }
       }
       
-      // Example of how you would call the Convex mutation (to be implemented)
-      // await mutation.updateNote({
-      //   id: noteId, // You would need noteId from props or state
-      //   title,
-      //   content,
-      //   tags: labels,
-      //   folderId: currentFolder?.id,
-      // });
+      if (isEditingExisting && currentNote) {
+        // Update existing note
+        await updateNote({
+          id: currentNote._id,
+          title: title.trim() || 'Untitled Note',
+          content: finalContent,
+          tags: labels,
+          folderId: currentFolder?._id,
+        });
+        
+        Alert.alert('Success', `Note "${title}" updated successfully!`);
+      } else {
+        // Create new note
+        const noteId = await createNote({
+          title: title.trim() || 'Untitled Note',
+          content: finalContent,
+          userId: user.id,
+          tags: labels,
+          folderId: currentFolder?._id,
+        });
+        
+        Alert.alert('Success', `Note "${title}" created successfully!`);
+        
+        // Navigate to the newly created note
+        router.replace(`/mobile-friendly-editor?id=${noteId}`);
+      }
       
       setIsSaving(false);
-      Alert.alert(
-        'Save Note', 
-        `Note "${title}" saved with ${labels.length} labels in folder "${currentFolder?.name || 'Root'}"`,
-      );
     } catch (error) {
       setIsSaving(false);
       Alert.alert('Error', 'Failed to save note');
@@ -758,6 +965,30 @@ export default function MobileFriendlyEditorPage() {
       return orientation === 'portrait' ? 60 : 40;
     }
     return 0;
+  };
+
+  // Handle toolbar reset - this will reset the toolbar position and settings
+  const handleResetToolbar = () => {
+    if (editorRef.current) {
+      // Reset toolbar to default position and settings
+      // Force a re-render of the toolbar component
+      Alert.alert(
+        'Reset Toolbar',
+        'This will reset the toolbar to its default position and settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Reset', 
+            style: 'destructive',
+            onPress: () => {
+              // Reset toolbar settings to defaults
+              // You can expand this to reset toolbar height and padding to defaults
+              console.log('Toolbar reset to default position');
+            }
+          }
+        ]
+      );
+    }
   };
 
   return (
@@ -806,6 +1037,33 @@ export default function MobileFriendlyEditorPage() {
             }}
           >
             <Ionicons name="color-palette-outline" size={24} color="#F5F5DC" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.customHeaderButton}
+            onPress={() => {
+              setBibleModalVisible(true);
+            }}
+          >
+            <Ionicons name="book-outline" size={24} color="#F5F5DC" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.customHeaderButton}
+            onPress={handleResetToolbar}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="refresh-outline" size={24} color="#F5F5DC" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.customHeaderButton}
+            onPress={() => {
+              setToolbarSettingsVisible(true);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="settings-outline" size={24} color="#F5F5DC" />
           </TouchableOpacity>
           
           <TouchableOpacity
@@ -904,7 +1162,10 @@ export default function MobileFriendlyEditorPage() {
               <TenTapEditor 
                 themeId={currentTheme.id as any}
                 ref={editorRef}
+                initialContent={content}
                 onContentChange={handleContentChange}
+                toolbarHeight={toolbarHeight}
+                toolbarBottomPadding={toolbarBottomPadding}
               />
             </View>
           </ScrollView>
@@ -934,9 +1195,32 @@ export default function MobileFriendlyEditorPage() {
         onClose={() => setFolderSheetVisible(false)}
         onSelectFolder={handleSelectFolder}
         onCreateFolder={handleCreateFolder}
-        folders={folders}
+        folders={folders || []}
         currentFolder={currentFolder}
         theme={currentTheme}
+      />
+      
+      {/* Bible Reference Modal */}
+      <BibleReferenceModal
+        visible={bibleModalVisible}
+        onClose={() => setBibleModalVisible(false)}
+        onInsert={handleBibleVerseInsert}
+        theme={{
+          background: currentTheme.background,
+          text: currentTheme.text,
+          header: currentTheme.header,
+        }}
+      />
+      
+      {/* Toolbar Settings Modal */}
+      <ToolbarSettingsModal
+        visible={toolbarSettingsVisible}
+        onClose={() => setToolbarSettingsVisible(false)}
+        theme={currentTheme}
+        toolbarHeight={toolbarHeight}
+        toolbarBottomPadding={toolbarBottomPadding}
+        onToolbarHeightChange={setToolbarHeight}
+        onToolbarBottomPaddingChange={setToolbarBottomPadding}
       />
     </SafeAreaView>
   );
@@ -1299,5 +1583,79 @@ const styles = StyleSheet.create({
   customHeaderButton: {
     padding: 12,
     marginLeft: 10,
+  },
+  toolbarModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  toolbarModalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '60%',
+    paddingBottom: 20,
+  },
+  toolbarModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  toolbarModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  toolbarSettingItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  toolbarSettingLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  toolbarSettingHint: {
+    fontSize: 14,
+    color: '#999',
+  },
+  toolbarInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  toolbarSlider: {
+    flex: 1,
+  },
+  toolbarNumberInput: {
+    width: 40,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 4,
+  },
+  toolbarSliderLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 8,
+  },
+  toolbarSliderLabel: {
+    fontSize: 14,
+    color: '#999',
+  },
+  toolbarSaveButton: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    alignItems: 'center',
+  },
+  toolbarSaveButtonText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 }); 

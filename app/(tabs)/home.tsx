@@ -193,7 +193,7 @@ export default function HomePage() {
                 {/* Add New Note Button */}
                 <TouchableOpacity 
                     style={styles.addNoteButton}
-                    onPress={() => router.push('/note/new')}
+                    onPress={() => router.push('/mobile-friendly-editor')}
                     activeOpacity={0.8}
                 >
                     <View style={styles.addNoteContent}>
@@ -203,29 +203,6 @@ export default function HomePage() {
                         </View>
                         <View style={styles.bibleImageContainer}>
                             <FontAwesome5 name="bible" size={42} color="#F5F5DC" />
-                        </View>
-                    </View>
-                </TouchableOpacity>
-
-                {/* Mobile Friendly Editor Button */}
-                <TouchableOpacity 
-                    style={[styles.addNoteButton, { marginTop: 16, backgroundColor: '#272727' }]}
-                    onPress={() => {
-                        console.log('Navigating to mobile friendly editor (DEBUG VERSION)');
-                        // Force clear any caches by using a timestamp
-                        router.push('/mobile-friendly-editor');
-                    }}
-                    activeOpacity={0.8}
-                >
-                    <View style={styles.addNoteContent}>
-                        <View style={styles.addNoteTextContainer}>
-                            <Text style={[styles.addNoteTitle, { color: '#F5F5DC' }]}>Try NEW Mobile Friendly Editor (Debug)</Text>
-                            <Text style={[styles.addNoteSubtitle, { color: '#F5F5DC' }]}>
-                                Simplified version with custom toolbar
-                            </Text>
-                        </View>
-                        <View style={[styles.addNoteIconContainer, { backgroundColor: '#444' }]}>
-                            <Ionicons name="bug" size={24} color="#F5F5DC" />
                         </View>
                     </View>
                 </TouchableOpacity>

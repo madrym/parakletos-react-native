@@ -18,7 +18,7 @@ interface UseBibleVerseEditorIntegrationProps {
 const useBibleVerseEditorIntegration = ({
   editor,
   enabled = true,
-  debounceMs = 800,
+  debounceMs = 300,
   onDetection
 }: UseBibleVerseEditorIntegrationProps) => {
   // *** Add Log ***
@@ -64,69 +64,23 @@ const useBibleVerseEditorIntegration = ({
    * Clear the current detection state
    */
   const clearDetection = useCallback(() => {
-    // If there's a reference, add it to dismissed references
-    if (detectedReference) {
-      setDismissedReferences(prev => {
-        const newSet = [...prev, detectedReference];
-        return newSet;
-      });
-    }
-    
+    // Use refs to avoid triggering effects
     setDetectedReference(undefined);
     setBibleResult(undefined);
     setError(undefined);
     lastReference.current = undefined;
-  }, [detectedReference]);
-  
-  // Get text near cursor to detect Bible references
-  const getTextNearCursor = useCallback(() => {
-    if (!editor || !editor.getEditorState) return '';
-    
-    try {
-      // Get current selection
-      const editorState = editor.getEditorState();
-      // Add check: Ensure editorState and selection are defined before accessing 'to'
-      if (!editorState || !editorState.selection) {
-        console.warn('getTextNearCursor: Editor state or selection is not available yet.');
-        return ''; // Return empty string instead of falling back to entire content
-      }
-      const selection = editorState.selection;
-      const cursorPos = selection.to;
-      
-      // Try to get the current paragraph or surrounding text
-      // This is a simple approach - get 50 chars before and after cursor
-      const start = Math.max(0, cursorPos - 50);
-      const end = cursorPos + 50;
-      
-      // Try to get the current paragraph text specifically
-      try {
-        const currentNode = editorState.doc.nodeAt(cursorPos);
-        // If we can get the node at cursor and it has text content, use that
-        if (currentNode && currentNode.textContent) {
-          return currentNode.textContent; // Only analyze the current node's text
-        }
-      } catch (nodeError) {
-        console.log('Error getting current node:', nodeError);
-        // Fall through to other approaches if this fails
-      }
-      
-      // Slice editorContent around cursor position as fallback
-      if (editorContent) {
-        // Get a limited slice around the cursor position
-        return editorContent.slice(start, end);
-      }
-      
-      return ''; // Return empty if no text found
-    } catch (error) {
-      console.error('Error getting text near cursor:', error);
-      return '';
-    }
-  }, [editor, editorContent]);
+  }, []); // No dependencies to prevent loops
   
   // Detect Bible references in editor content
   useEffect(() => {
     // Skip detection if disabled by user or insertion cooldown
-    if (!enabled || !editor || !detectionEnabled) {
+    if (!enabled || !detectionEnabled) {
+      return;
+    }
+    
+    // Skip if editorContent is not available yet
+    if (editorContent === null || editorContent === undefined || editorContent.trim() === '') {
+      console.log('[Hook] Editor content not available yet, skipping detection');
       return;
     }
     
@@ -147,17 +101,23 @@ const useBibleVerseEditorIntegration = ({
     // Update last content change time
     lastContentChange.current = Date.now();
     
-    // Use a longer debounce when typing quickly (multiple changes within debounce period)
-    const effectiveDebounce = timeSinceLastChange < debounceMs ? debounceMs * 1.5 : debounceMs;
+    // Use a consistent debounce time - no more aggressive multiplying
+    // This allows for more responsive detection during typing
+    const effectiveDebounce = debounceMs;
     
     // Debounce the detection to avoid excessive processing
     debounceTimer.current = setTimeout(() => {
-      // Get text near cursor
-      const textNearCursor = getTextNearCursor();
+      console.log('[Hook] Detection timer triggered, analyzing content...');
+      
+      // Get text directly instead of using callback to avoid dependency issues
+      const textNearCursor = editorContent || '';
+      
+      console.log('[Hook] Text for analysis (length: ' + textNearCursor.length + '):', textNearCursor);
       
       if (!textNearCursor || textNearCursor.trim().length === 0) {
+        console.log('[Hook] No text to analyze, clearing detection');
         // Clear detection if no text near cursor
-        if (detectedReference) {
+        if (lastReference.current) {
           setDetectedReference(undefined);
           lastReference.current = undefined;
           if (onDetection) onDetection(undefined);
@@ -165,21 +125,31 @@ const useBibleVerseEditorIntegration = ({
         return;
       }
       
+      // Reduced minimum length requirement for faster detection of short references like "John1"
+      if (textNearCursor.length < 3) {
+        console.log('[Hook] Text too short for detection (< 3 chars)');
+        return;
+      }
+      
       // Only detect references in text near cursor
       const reference = detectBibleReference(textNearCursor);
       
-      // Skip if this reference was dismissed previously and text hasn't changed significantly
+      console.log('[Hook] Detection result for "' + textNearCursor.substring(0, 50) + '":', reference);
+      
+      // Check if this reference was dismissed (read from current state, don't depend on it)
       if (reference && dismissedReferences.includes(reference)) {
+        console.log('[Hook] Reference was previously dismissed:', reference);
         return;
       }
       
       // Only update if the reference has changed and is non-null
       if (reference !== lastReference.current) {
         if (reference) {
-          // Verify reference is in the immediate vicinity (within 20 chars of cursor)
-          const referenceNearby = textNearCursor.length <= 100; // We're already using a node-specific approach
+          // More lenient proximity check for faster detection
+          const referenceNearby = textNearCursor.length <= 200; // Increased from 100 to 200
           
           if (referenceNearby) {
+            console.log('[Hook] Detected Bible reference:', reference);
             setDetectedReference(reference);
             lastReference.current = reference;
             
@@ -201,7 +171,7 @@ const useBibleVerseEditorIntegration = ({
         }
       }
     }, effectiveDebounce);
-  }, [editorContent, enabled, debounceMs, onDetection, getTextNearCursor, editor, detectedReference, detectionEnabled, dismissedReferences, clearDetection]);
+  }, [editorContent, enabled, debounceMs, onDetection, detectionEnabled]); // Removed dismissedReferences dependency
   
   /**
    * Reset dismissed references when content changes significantly
@@ -227,21 +197,32 @@ const useBibleVerseEditorIntegration = ({
       setError(undefined);
       setLoading(true);
       
-      console.log(`Fetching verses for ${reference}`);
+      console.log(`[Hook] Fetching verses for ${reference}`);
       const result = await getVersesFromReference(reference);
+      
+      console.log(`[Hook] getVersesFromReference result:`, {
+        result,
+        hasResult: !!result,
+        formattedReference: result?.formattedReference,
+        versesCount: result?.verses?.length || 0,
+        verses: result?.verses
+      });
       
       if (result) {
         setBibleResult(result);
+        console.log(`[Hook] setBibleResult called with:`, result);
       } else {
+        console.log(`[Hook] No result, setting error`);
         setError('No verses found');
         setBibleResult(undefined);
       }
     } catch (err) {
-      console.error('Error fetching verses:', err);
+      console.error('[Hook] Error fetching verses:', err);
       setError('Failed to fetch verses');
       setBibleResult(undefined);
     } finally {
       setLoading(false);
+      console.log(`[Hook] fetchVerses completed for ${reference}`);
     }
   }, [dismissedReferences]);
   
@@ -249,8 +230,11 @@ const useBibleVerseEditorIntegration = ({
    * Temporarily disable detection (used after insertion)
    */
   const temporarilyDisableDetection = useCallback((durationMs = 3000) => {
-    // Clear any existing detection first
-    clearDetection();
+    // Clear any existing detection first - inline to avoid dependency issues
+    setDetectedReference(undefined);
+    setBibleResult(undefined);
+    setError(undefined);
+    lastReference.current = undefined;
     
     // Disable detection
     setDetectionEnabled(false);
@@ -262,7 +246,19 @@ const useBibleVerseEditorIntegration = ({
     setTimeout(() => {
       setDetectionEnabled(true);
     }, durationMs);
-  }, [clearDetection]);
+  }, []); // Remove clearDetection dependency
+  
+  /**
+   * Dismiss a reference to prevent it from being detected again
+   */
+  const dismissReference = useCallback((reference: string) => {
+    setDismissedReferences(prev => {
+      if (!prev.includes(reference)) {
+        return [...prev, reference];
+      }
+      return prev;
+    });
+  }, []);
   
   /**
    * Inserts the fetched Bible verse content into the editor at the current cursor position.
@@ -284,17 +280,24 @@ const useBibleVerseEditorIntegration = ({
 
     // Add the reference to dismissed references
     if (bibleResult.formattedReference) {
-      setDismissedReferences(prev => {
-        const newSet = [...prev, bibleResult.formattedReference];
-        return newSet;
-      });
+      dismissReference(bibleResult.formattedReference);
     }
     
     // Mark this change as programmatic to avoid re-detection
     programmaticChange.current = true;
     
     // Clear current detection and disable future detection temporarily
-    temporarilyDisableDetection(3000);
+    setDetectedReference(undefined);
+    setBibleResult(undefined);
+    setError(undefined);
+    lastReference.current = undefined;
+    
+    // Disable detection temporarily
+    setDetectionEnabled(false);
+    
+    setTimeout(() => {
+      setDetectionEnabled(true);
+    }, 3000);
     
     console.log(`[Hook] insertVerseAtCursor called with reference: ${bibleResult.formattedReference}`);
 
@@ -323,20 +326,13 @@ const useBibleVerseEditorIntegration = ({
       editor.injectJS(jsCommand);
       console.log('[Hook] JS Injection command sent.');
       
-      // Additional cleanup - check again after a short delay
-      setTimeout(() => {
-        if (detectedReference === bibleResult.formattedReference) {
-          clearDetection();
-        }
-      }, 300);
-      
       return true;
     } catch (e) {
       console.error('[Hook] Error injecting JavaScript:', e);
       return false;
     }
 
-  }, [editor, clearDetection, temporarilyDisableDetection, detectedReference, setDismissedReferences]);
+  }, [editor, dismissReference]); // Simplified dependencies
   
   /**
    * Insert a verse from an external reference (not from detection)
@@ -367,10 +363,19 @@ const useBibleVerseEditorIntegration = ({
    * Open the Bible reference modal
    */
   const openReferenceModal = useCallback(() => {
+    // Dismiss current reference if any (use ref instead of state to avoid dependency)
+    if (lastReference.current) {
+      dismissReference(lastReference.current);
+    }
+    
     // Clear any existing detection when opening modal
-    clearDetection();
+    setDetectedReference(undefined);
+    setBibleResult(undefined);
+    setError(undefined);
+    lastReference.current = undefined;
+    
     setModalVisible(true);
-  }, [clearDetection]);
+  }, [dismissReference]);
   
   /**
    * Close the Bible reference modal
@@ -378,8 +383,11 @@ const useBibleVerseEditorIntegration = ({
   const closeReferenceModal = useCallback(() => {
     setModalVisible(false);
     // Clean up state when modal is closed
-    clearDetection();
-  }, [clearDetection]);
+    setDetectedReference(undefined);
+    setBibleResult(undefined);
+    setError(undefined);
+    lastReference.current = undefined;
+  }, []);
   
   return {
     // Current state
@@ -391,7 +399,7 @@ const useBibleVerseEditorIntegration = ({
     // Detection control
     detectionEnabled,
     setDetectionEnabled,
-    temporarilyDisableDetection,
+    dismissReference,
     
     // Modal state
     modalVisible,

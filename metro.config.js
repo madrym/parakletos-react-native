@@ -7,6 +7,10 @@ const config = getDefaultConfig(__dirname, {
   isCSSEnabled: true,
 });
 
+// Add platform-specific file extensions
+config.resolver.platforms = ['ios', 'android', 'native', 'web'];
+config.resolver.sourceExts = [...config.resolver.sourceExts, 'native.ts', 'web.ts'];
+
 const webAliases = {
   'react-native': 'react-native-web',
   'react-native-webview': '@10play/react-native-web-webview',

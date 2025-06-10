@@ -6,6 +6,10 @@ export interface BibleVerse {
 export interface BibleResult {
     formattedReference: string;
     verses: BibleVerse[];
+    book: string;
+    chapter: number;
+    startVerse?: number;
+    endVerse?: number;
 }
 
 export interface DatabaseInterface {

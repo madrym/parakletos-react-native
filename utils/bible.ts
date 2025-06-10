@@ -2,7 +2,10 @@
  * Bible utility functions for reference parsing and verse retrieval
  */
 
-// Types for Bible data
+// Import Bible data directly - this works better with both React Native and Jest
+import bibleDataRaw from '../data/NIV_bible.json';
+
+// Types for Bible data - maintaining compatibility with existing code
 export interface BibleVerse {
   verse: number;
   text: string;
@@ -18,6 +21,15 @@ export interface BibleBook {
   chapters: BibleChapter[];
 }
 
+// New type for the NIV_bible.json format
+interface NIVBibleData {
+  [bookName: string]: {
+    [chapterNumber: string]: {
+      [verseNumber: string]: string;
+    };
+  };
+}
+
 export interface BibleResult {
   formattedReference: string;
   verses: BibleVerse[];
@@ -26,6 +38,9 @@ export interface BibleResult {
   startVerse?: number;
   endVerse?: number;
 }
+
+// Type the imported data properly
+const bibleData = bibleDataRaw as NIVBibleData;
 
 // Bible book name abbreviations mapping
 const BOOK_ABBREVIATIONS: Record<string, string> = {
@@ -177,34 +192,61 @@ const BOOK_ABBREVIATIONS: Record<string, string> = {
   're': 'Revelation'
 };
 
-// Cache for loaded Bible data
-let bibleData: BibleBook[] | null = null;
-
 /**
- * Load Bible data from JSON file
+ * Convert NIV Bible data format to the old format for a specific book and chapter
+ * This maintains compatibility with existing code
  * 
- * @returns Promise resolving to Bible data
+ * @param bookData - Chapter data from NIV_bible.json format
+ * @returns Array of verses in the old format
  */
-export async function loadBibleData(): Promise<BibleBook[]> {
-  if (bibleData !== null) {
-    return bibleData;
+function convertToOldFormat(bookData: { [verseNumber: string]: string }): BibleVerse[] {
+  const verses: BibleVerse[] = [];
+  
+  for (const [verseNumber, text] of Object.entries(bookData)) {
+    verses.push({
+      verse: parseInt(verseNumber, 10),
+      text: text
+    });
   }
   
+  // Sort by verse number to ensure proper order
+  verses.sort((a, b) => a.verse - b.verse);
+  
+  return verses;
+}
+
+/**
+ * Get the maximum verse number for a given book and chapter
+ * 
+ * @param book - Book name
+ * @param chapter - Chapter number
+ * @returns Maximum verse number in that chapter
+ */
+function getMaxVerseInChapter(book: string, chapter: number): number {
   try {
-    // Import the NIV.json file
-    const data = await import('../data/NIV.json');
-    bibleData = data.default;
-    return bibleData;
+    const bookData = bibleData[book];
+    if (!bookData) {
+      return 999; // Fallback if book not found
+    }
+    
+    const chapterData = bookData[chapter.toString()];
+    if (!chapterData) {
+      return 999; // Fallback if chapter not found
+    }
+    
+    // Get all verse numbers and find the maximum
+    const verseNumbers = Object.keys(chapterData).map(v => parseInt(v, 10));
+    return Math.max(...verseNumbers);
   } catch (error) {
-    console.error('Failed to load Bible data:', error);
-    throw new Error('Failed to load Bible data');
+    console.log(`Error getting max verse for ${book} ${chapter}:`, error);
+    return 999; // Fallback
   }
 }
 
 /**
- * Parse a Bible reference string and return normalized components
+ * Parse a Bible reference string into its components
  * 
- * @param reference - Bible reference string (e.g., "Gen 1:1-10")
+ * @param reference - Reference string (e.g., "Gen 1:1-10")
  * @returns Parsed reference components
  */
 export function parseReference(reference: string): {
@@ -213,20 +255,37 @@ export function parseReference(reference: string): {
   startVerse?: number;
   endVerse?: number;
 } {
-  // Remove all whitespace to handle variations like "Gen 1:1", "Gen1:1"
-  const cleanReference = reference.trim();
+  // Clean up the reference string
+  const cleanReference = reference.trim().replace(/\s+/g, '');
   
-  // Regular expression to match Bible references
-  // Format: [Book name][Chapter]:[Verse]-[EndVerse]
-  // Or: [Book name][Chapter]
-  const regex = /^([\d\s]?[A-Za-z]+)[\s]*(\d+)(?::(\d+)(?:-(\d+))?)?$/;
-  const match = cleanReference.match(regex);
+  // Regex patterns for different reference formats
+  const patterns = [
+    // Pattern 1: Book + Chapter + ":" + StartVerse + "-" + EndVerse (e.g., "John1:1-12")
+    /^([123]?[A-Za-z]+)(\d+):(\d+)-(\d+)$/,
+    // Pattern 2: Book + Chapter + ":" + StartVerse + "-" (e.g., "John1:4-")
+    /^([123]?[A-Za-z]+)(\d+):(\d+)-$/,
+    // Pattern 3: Book + Chapter + ":" + Verse (e.g., "John1:1")
+    /^([123]?[A-Za-z]+)(\d+):(\d+)$/,
+    // Pattern 4: Book + Chapter only (e.g., "John1")
+    /^([123]?[A-Za-z]+)(\d+)$/
+  ];
+
+  let match = null;
+  let patternIndex = -1;
   
-  if (!match) {
-    throw new Error(`Invalid Bible reference format: ${reference}`);
+  for (let i = 0; i < patterns.length; i++) {
+    match = cleanReference.match(patterns[i]);
+    if (match) {
+      patternIndex = i;
+      break;
+    }
   }
-  
-  const [_, bookText, chapterText, startVerseText, endVerseText] = match;
+
+  if (!match) {
+    throw new Error(`Invalid reference format: ${reference}`);
+  }
+
+  const [, bookText, chapterText, startVerseText, endVerseText] = match;
   
   // Normalize book name
   const bookName = normalizeBookName(bookText.toLowerCase().trim());
@@ -234,7 +293,24 @@ export function parseReference(reference: string): {
   
   // Parse verse numbers if present
   const startVerse = startVerseText ? parseInt(startVerseText, 10) : undefined;
-  const endVerse = endVerseText ? parseInt(endVerseText, 10) : startVerse;
+  
+  // Handle different end verse scenarios
+  let endVerse: number | undefined = undefined;
+  
+  if (startVerse !== undefined) {
+    if (patternIndex === 1) {
+      // Pattern like "John1:4-" means from verse 4 to end of chapter
+      // Get the actual maximum verse number for this chapter
+      endVerse = getMaxVerseInChapter(bookName, chapter);
+      console.log(`[Bible Utils] Found range pattern "${reference}", setting endVerse to actual max: ${endVerse}`);
+    } else if (endVerseText) {
+      // Pattern like "John1:1-12" with explicit end verse
+      endVerse = parseInt(endVerseText, 10);
+    } else {
+      // Pattern like "John1:4" - single verse
+      endVerse = startVerse;
+    }
+  }
   
   return {
     book: bookName,
@@ -245,47 +321,30 @@ export function parseReference(reference: string): {
 }
 
 /**
- * Normalize book name using abbreviations map
+ * Normalize book name using abbreviations
  * 
- * @param bookText - Raw book name text
+ * @param bookText - Raw book text from user input
  * @returns Normalized book name
  */
 function normalizeBookName(bookText: string): string {
-  // First, check if it's already a proper book name
-  const lowerBookText = bookText.toLowerCase();
+  const cleanText = bookText.toLowerCase().trim();
   
-  // Check in abbreviations
-  if (BOOK_ABBREVIATIONS[lowerBookText]) {
-    return BOOK_ABBREVIATIONS[lowerBookText];
+  // Check abbreviations first
+  if (BOOK_ABBREVIATIONS[cleanText]) {
+    return BOOK_ABBREVIATIONS[cleanText];
   }
   
-  // Check if it's a full book name that might have been lowercased
-  const allBooks = Object.values(BOOK_ABBREVIATIONS);
-  const matchedBook = allBooks.find(book => book.toLowerCase() === lowerBookText);
-  if (matchedBook) {
-    return matchedBook;
+  // If not found in abbreviations, try to match partial names
+  const possibleMatches = Object.values(BOOK_ABBREVIATIONS).filter(
+    bookName => bookName.toLowerCase().startsWith(cleanText)
+  );
+  
+  if (possibleMatches.length === 1) {
+    return possibleMatches[0];
   }
   
-  // If no match is found but it starts with a number, try to format it properly
-  if (/^[123]/.test(lowerBookText)) {
-    // Extract the number and the rest of the book name
-    const match = lowerBookText.match(/^([123])[\s]?(.+)/);
-    if (match) {
-      const [_, num, restOfBook] = match;
-      const formattedBookName = `${num} ${restOfBook}`;
-      
-      // Check formatted name in abbreviations
-      if (BOOK_ABBREVIATIONS[formattedBookName]) {
-        return BOOK_ABBREVIATIONS[formattedBookName];
-      }
-    }
-  }
-  
-  // If all else fails, just capitalize the first letter of each word
-  return bookText
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  // If still not found, capitalize first letter and return as-is
+  return bookText.charAt(0).toUpperCase() + bookText.slice(1).toLowerCase();
 }
 
 /**
@@ -299,29 +358,29 @@ export async function getVersesFromReference(reference: string): Promise<BibleRe
     // Parse the reference
     const { book, chapter, startVerse, endVerse } = parseReference(reference);
     
-    // Load Bible data
-    const data = await loadBibleData();
-    
     // Find the requested book
-    const bookData = data.find(b => b.book === book);
+    const bookData = bibleData[book];
     if (!bookData) {
       throw new Error(`Book not found: ${book}`);
     }
     
     // Find the requested chapter
-    const chapterData = bookData.chapters.find(c => c.chapter === chapter);
+    const chapterData = bookData[chapter.toString()];
     if (!chapterData) {
       throw new Error(`Chapter not found: ${book} ${chapter}`);
     }
+    
+    // Convert to old format for compatibility
+    const allVerses = convertToOldFormat(chapterData);
     
     let verses: BibleVerse[];
     
     // If no verse is specified, return the entire chapter
     if (!startVerse) {
-      verses = [...chapterData.verses];
+      verses = [...allVerses];
     } else {
       // Filter verses based on range
-      verses = chapterData.verses.filter(
+      verses = allVerses.filter(
         v => v.verse >= (startVerse || 1) && v.verse <= (endVerse || 999)
       );
     }
@@ -335,7 +394,9 @@ export async function getVersesFromReference(reference: string): Promise<BibleRe
     if (startVerse) {
       formattedReference += `:${startVerse}`;
       if (endVerse && endVerse !== startVerse) {
-        formattedReference += `-${endVerse}`;
+        // Show the actual end verse number instead of 999
+        const actualEndVerse = Math.min(endVerse, Math.max(...allVerses.map(v => v.verse)));
+        formattedReference += `-${actualEndVerse}`;
       }
     }
     
@@ -345,7 +406,7 @@ export async function getVersesFromReference(reference: string): Promise<BibleRe
       book,
       chapter,
       startVerse,
-      endVerse
+      endVerse: endVerse && endVerse !== 999 ? endVerse : Math.max(...allVerses.map(v => v.verse))
     };
   } catch (error) {
     console.error('Error getting verses:', error);
@@ -356,36 +417,75 @@ export async function getVersesFromReference(reference: string): Promise<BibleRe
 /**
  * Detect potential Bible references in text
  * 
- * @param text - Text to analyze for Bible references
- * @returns Detected reference or null if none found
+ * @param text - Text to search for Bible references
+ * @returns First detected reference or null if none found
  */
 export function detectBibleReference(text: string): string | null {
-  // Pattern for detecting Bible references
-  const referencePattern = /\b([123]?\s?[A-Za-z]+)[\s]*(\d+)(?::(\d+)(?:-(\d+))?)?\b/g;
+  console.log('[Bible Utils] Detecting references in text:', text);
   
-  // Find all matches
-  const matches = [...text.matchAll(referencePattern)];
+  // Updated regex to support multiple patterns:
+  // 1. "John1" (book + chapter only) - shows full chapter
+  // 2. "John1:1-12" (book + chapter:startVerse-endVerse) - shows verse range
+  // 3. "John1:4-" (book + chapter:startVerse-) - shows verse to end of chapter
+  // 4. "John1:1" (book + chapter:verse) - shows single verse
+  const referencePatterns = [
+    // Pattern 1: Book + Chapter + ":" + StartVerse + "-" + EndVerse (e.g., "John1:1-12")
+    /\b([123]?[A-Za-z]+)\s*(\d+):(\d+)-(\d+)\b/g,
+    // Pattern 2: Book + Chapter + ":" + StartVerse + "-" (e.g., "John1:4-")
+    /\b([123]?[A-Za-z]+)\s*(\d+):(\d+)-\s*$/g,
+    // Pattern 3: Book + Chapter + ":" + Verse (e.g., "John1:1")
+    /\b([123]?[A-Za-z]+)\s*(\d+):(\d+)\b/g,
+    // Pattern 4: Book + Chapter only (e.g., "John1") - must be at word boundary and followed by space/end
+    /\b([123]?[A-Za-z]+)(\d+)(?=\s|$|[^\w:])/g
+  ];
   
-  // Return the last match as it's likely the most recent/relevant
-  if (matches.length > 0) {
-    const lastMatch = matches[matches.length - 1];
-    return lastMatch[0];
+  // Try each pattern in order of specificity (most specific first)
+  for (const regex of referencePatterns) {
+    regex.lastIndex = 0; // Reset regex state
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const potentialReference = match[0].trim();
+      console.log('[Bible Utils] Found potential reference:', potentialReference);
+      
+      try {
+        // For chapter-only references (Pattern 4), we need to validate the book name
+        if (!potentialReference.includes(':')) {
+          // This is a chapter-only reference like "John1"
+          const bookPart = match[1];
+          const chapterPart = match[2];
+          
+          // Try to parse it to see if it's a valid book
+          parseReference(potentialReference);
+          console.log('[Bible Utils] Chapter-only reference is valid:', potentialReference);
+          return potentialReference;
+        } else {
+          // This is a verse reference, validate normally
+          parseReference(potentialReference);
+          console.log('[Bible Utils] Reference is valid:', potentialReference);
+          return potentialReference;
+        }
+      } catch (error) {
+        console.log('[Bible Utils] Reference is invalid:', potentialReference, error);
+        // Continue searching if this isn't a valid reference
+      }
+    }
   }
   
+  console.log('[Bible Utils] No valid references found in text');
   return null;
 }
 
 /**
- * Check if a reference is valid by attempting to parse and retrieve verses
+ * Check if a reference string is valid
  * 
- * @param reference - Bible reference to validate
- * @returns Promise resolving to boolean indicating validity
+ * @param reference - Reference string to validate
+ * @returns Promise resolving to true if valid
  */
 export async function isValidReference(reference: string): Promise<boolean> {
   try {
     await getVersesFromReference(reference);
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 } 

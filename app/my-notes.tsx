@@ -44,7 +44,7 @@ export default function MyNotesPage() {
     const renderNote = ({ item }: { item: any }) => (
         <TouchableOpacity
             style={styles.noteItem}
-            onPress={() => router.push(`/note/${item._id}`)}
+            onPress={() => router.push(`/mobile-friendly-editor?id=${item._id}`)}
         >
             <View style={styles.noteHeader}>
                 <Text style={styles.noteTitle} numberOfLines={1}>

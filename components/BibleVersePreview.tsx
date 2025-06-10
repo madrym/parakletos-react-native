@@ -57,6 +57,11 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
       loading,
       error,
       bibleResultExists: !!bibleResult,
+      bibleResultData: bibleResult ? {
+        formattedReference: bibleResult.formattedReference,
+        versesCount: bibleResult.verses?.length || 0,
+        verses: bibleResult.verses || []
+      } : null
     }
   );
 
@@ -90,16 +95,15 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
             <Ionicons name="warning" size={24} color="#FF6347" />
             <Text style={styles.errorText}>{error}</Text>
           </View>
-        ) : hasResult && bibleResult.verses && bibleResult.verses.length > 0 ? (
+        ) : bibleResult && bibleResult.verses && bibleResult.verses.length > 0 ? (
           <ScrollView 
             style={styles.versesScrollView}
             contentContainerStyle={styles.versesContainer}
             showsVerticalScrollIndicator={true}
-            indicatorStyle="black"
             alwaysBounceVertical={false}
           >
-            {bibleResult.verses.map((verse) => (
-              <View key={verse.verse} style={styles.verseRow}>
+            {bibleResult.verses.map((verse, index) => (
+              <View key={`${verse.verse}-${index}`} style={styles.verseRow}>
                 <Text style={[styles.verseNumber, { color: theme.header }]}>
                   {verse.verse}
                 </Text>
@@ -110,34 +114,35 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
             ))}
           </ScrollView>
         ) : (
-          <Text style={[styles.placeholderText, { color: theme.text }]}>
-            Enter a Bible reference
-          </Text>
+          <View style={styles.loadingContainer}>
+            <Text style={[styles.loadingText, { color: theme.text }]}>
+              {reference ? `Loading ${reference}...` : 'Enter a Bible reference'}
+            </Text>
+          </View>
         )}
       </View>
       
       {/* Footer with insert button - Always visible at bottom */}
       <View style={[styles.actionsContainer, { 
         borderTopColor: `${theme.header}40`,
-        backgroundColor: `${theme.background}F0` 
+        backgroundColor: theme.background 
       }]}>
         <TouchableOpacity 
           style={[styles.insertButton, { 
             backgroundColor: theme.header,
-            opacity: !hasResult || loading || error ? 0.6 : 1 
+            opacity: (!bibleResult || loading || error) ? 0.6 : 1 
           }]} 
           onPress={() => {
-            // *** Add Log ***
-            console.log('[BibleVersePreview] Insert button pressed. Has result:', hasResult);
-            if (hasResult && bibleResult) {
+            console.log('[BibleVersePreview] Insert button pressed. Has result:', !!bibleResult);
+            if (bibleResult && !loading && !error) {
               onInsert(bibleResult);
             }
           }}
-          disabled={!!((!hasResult) || loading || error)}
+          disabled={!bibleResult || loading || !!error}
           accessibilityLabel="Insert verse"
           accessibilityRole="button"
         >
-          <Ionicons name="add-circle-outline" size={18} color="#F5F5DC" />
+          <Ionicons name="add-circle-outline" size={20} color="#F5F5DC" />
           <Text style={styles.insertButtonText}>
             {loading ? "Loading..." : "Insert Verse"}
           </Text>
@@ -149,31 +154,24 @@ const BibleVersePreview: React.FC<BibleVersePreviewProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    margin: 8, // Reduced from 10
-    borderRadius: 8,
+    margin: 0,
+    borderRadius: 12,
     borderWidth: 1,
-    overflow: 'hidden',
-    maxHeight: MAX_PREVIEW_HEIGHT,
+    overflow: 'visible', // Changed from 'hidden' to 'visible' to prevent clipping
+    height: 320, // Fixed height instead of max height
+    minHeight: 180,
     flexDirection: 'column',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    backgroundColor: '#F5F5DC',
+    width: '100%',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 14, // Reduced from 16
-    paddingVertical: 10, // Reduced from 12
-    minHeight: 50, // Reduced from 60
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    height: 48,
+    backgroundColor: '#0B4619', // Ensure header has background
   },
   headerText: {
     fontSize: 16,
@@ -183,46 +181,43 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   closeButton: {
-    padding: 4,
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 8,
+    marginLeft: 8,
   },
   scrollableWrapper: {
-    flexGrow: 1,
-    flexShrink: 1,
-    maxHeight: MAX_CONTENT_HEIGHT,
+    flex: 1,
+    height: 200, // Fixed height for scrollable area
   },
   versesScrollView: {
+    flex: 1,
     width: '100%',
   },
   versesContainer: {
-    paddingHorizontal: 14, // Reduced from 16
-    paddingVertical: 10, // Reduced from 12
-    paddingBottom: 14, // Reduced from 16
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingBottom: 15,
   },
   verseRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    marginBottom: 10,
     alignItems: 'flex-start',
   },
   verseNumber: {
     fontWeight: 'bold',
     fontSize: 14,
-    marginRight: 8,
-    minWidth: 20,
+    marginRight: 10,
+    minWidth: 24,
   },
   verseText: {
-    fontSize: 16,
+    fontSize: 14,
     flex: 1,
-    lineHeight: 24,
+    lineHeight: 22,
   },
   loadingContainer: {
     padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    height: '100%',
+    flex: 1,
   },
   loadingText: {
     marginTop: 10,
@@ -232,7 +227,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    height: '100%',
+    flex: 1,
   },
   errorText: {
     marginTop: 10,
@@ -249,24 +244,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 10, // Reduced from 12
+    padding: 12,
     borderTopWidth: 1,
-    height: 50, // Reduced from 60
+    height: 72, // Increased height to ensure visibility
+    backgroundColor: '#F5F5DC',
+    borderTopColor: '#0B4619',
   },
   insertButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 4,
-    minWidth: 140,
+    paddingHorizontal: 20,
+    paddingVertical: 14, // Increased padding
+    borderRadius: 8,
+    minWidth: 160,
+    minHeight: 48, // Increased minimum height
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   insertButtonText: {
     color: '#F5F5DC',
     fontWeight: '600',
-    marginLeft: 4,
-    fontSize: 15,
+    marginLeft: 6,
+    fontSize: 16,
+  },
+  debugContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 100,
+  },
+  debugText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#0B4619',
+    textAlign: 'center',
   },
 });
 
